@@ -34,3 +34,27 @@ def create_tables():
         )
     """)
     print("[DB] Table 'users' ready")
+
+    # Stores messages for online delivery (Store-and-forward)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS messages (
+            message_id  INTEGER PRIMARY KEY AUTOINCREMENT,
+            sender      TEXT    NOT NULL,
+            receiver    TEXT    NOT NULL,
+            msg_type    TEXT    NOT NULL,
+            content     TEXT,
+            timestamp   TEXT    NOT NULL,
+            delivered   INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    print("[DB] Table 'messages' ready")
+
+    # Stores group chats
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS groups (
+            group_id    INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_name  TEXT    NOT NULL UNIQUE,
+            created_by  TEXT    NOT NULL
+        )
+    """)
+    print("[DB] Table 'groups' ready")
