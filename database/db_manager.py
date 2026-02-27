@@ -46,3 +46,33 @@ def register_user(username, password):
     except Exception as e:
         print(f"[DB ERROR] register_user: {e}")
         return False
+    
+def verify_user(username, password):
+    """
+    Checks if the username and password entered match what is stored in the database.
+    The password is hashed before comparing since we never store plain text passwords.
+    Returns True if credentials are correct, False if wrong or user not found.
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        # Fetch the stored hashed password for this username
+        cursor.execute(
+            "SELECT password_hash FROM users WHERE username = ?",
+            (username,)
+        )
+
+        row = cursor.fetchone()
+        conn.close()
+
+        # If no row returned the username does not exist
+        if row is None:
+            return False
+
+        # Hash the entered password and compare it to the stored hash
+        return row[0] == hash_password(password)
+
+    except Exception as e:
+        print(f"[DB ERROR] verify_user: {e}")
+        return False
