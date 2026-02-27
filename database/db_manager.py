@@ -10,3 +10,39 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from constants import DB_NAME
+
+def get_connection():
+    """
+    Opena and reutrns a connection to the database.
+    check_same_thread=False is requiredbecuase multiple server threads will call these functions at the same time.
+    """
+    return sqlite3.connect(DB_NAME, check_same_thread=False)
+
+def hash_password(password):
+    """
+    we hash the password before storing it so plain text passwords are never in the database
+    We never store plain text passwords in the database.
+    """
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+
+def register_user(username, password):
+    """
+    Register a new user account with a hashed password.
+    Returns True is registration successful and False if the username already exixts.
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO users (username, hashed_password) VALUES (?, ?)", (username, hash_password(password)))
+        conn.commit()
+        conn.close()
+        print(f"[DB] User '{username}' registered")
+        return True
+    
+    except sqlite3.IntegrityError:
+        print(f"[DB] Registration failed - '{username}' already exists")
+        return False
+    
+    except Exception as e:
+        print(f"[DB ERROR] register_user: {e}")
+        return False
