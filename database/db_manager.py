@@ -76,3 +76,17 @@ def verify_user(username, password):
     except Exception as e:
         print(f"[DB ERROR] verify_user: {e}")
         return False
+    
+def set_user_status(username, status):
+    """
+    Updates a user's status to 'online' or 'offline'.
+    Called by the server on login and logout.
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE users SET status = ? WHERE username = ?", (status, username))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[DB ERROR] set_user-status: {e}")
