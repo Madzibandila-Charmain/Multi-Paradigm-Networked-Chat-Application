@@ -47,3 +47,9 @@ class ClientHandler:
         self.username = username
         msg = build_tcp_message(LOGIN, username, "SERVER")
         self.tcp_socket.sendall(msg.encode())
+    
+    #Sends a message
+    def send_text(self, receiver, text):
+        msg = build_tcp_message(TEXT, self.username, receiver, text)
+        self.tcp_socket.sendall(msg.encode())
+        
