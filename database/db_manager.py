@@ -141,3 +141,26 @@ def mark_delivered(message_id):
 
     except Exception as e:
         print(f"[DB ERROR] mark_delivered: {e}")
+
+def create_group(group_name, creator_username):
+    """
+    Creates a new group and adds the creator as the first member.
+    Returns True if successful, False if the group name already exists.
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO groups (group_name, created_by) VALUES (?, ?)",(group_name, creator_username))
+        cursor.execute("INSERT INTO group_members (group_name, username) VALUES (?, ?)",(group_name, creator_username))
+        conn.commit()
+        conn.close()
+        print(f"[DB] Group '{group_name}' created by '{creator_username}'")
+        return True
+    
+    except sqlite3.IntegrityError:
+        print(f"[DB] Group '{group_name}' already exists")
+        return False
+    
+    except Exception as e:
+        print(f"[DB ERROR] create_group: {e}")
+        return False
