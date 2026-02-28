@@ -1,8 +1,6 @@
-# CSC3002F - Multi-Paradigm Chat Application
-# CHARMAIN - Main client application
-#You are responsible for two files. 
-# The first is the main client file which connects to the server, handles login, and lets the user send messages and commands from the terminal. 
-# The second is the file transfer file which handles sending and receiving files like images, audio, and documents. 
+# A program which implements the client side of a Multi-Paradigm Chat Application
+# Author: MADZIBANDILA CHARMAIN
+# Date: 28 February 2026
 
 import socket
 import threading
@@ -24,3 +22,10 @@ from utils.message import (
     build_tcp_message, parse_tcp_header,
     build_udp_message, parse_udp_message, get_timestamp
 )
+
+class ClientHandler:
+
+    def __init__(self):
+        self.username = None
+        self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.udp_socket = socket.socket(socket.AF_NET, socket.SOCK_DGRAM)
