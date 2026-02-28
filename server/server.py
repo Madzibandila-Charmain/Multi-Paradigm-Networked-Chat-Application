@@ -48,3 +48,18 @@ def remove_online_client(username):
     with online_clients_lock:
         if username in online_clients:
             del online_clients[username]
+
+def get_online_client_socket(username):
+    """
+    Looks up a users socket by their username
+    Returns their socket if online, or None if they are not in the dictionary
+    """
+    with online_clients_lock:
+        return online_clients.get(username, None)
+    
+def is_online(username):
+    """
+     Checks if a username is currently in the online clients dictionary.
+    """
+    with online_clients_lock:
+        return username in online_clients
