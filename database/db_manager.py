@@ -213,13 +213,32 @@ def get_group_members(group_name):
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute(
-            "SELECT username FROM group_members WHERE group_name = ?",
-            (group_name,)
-        )
+        cursor.execute("SELECT username FROM group_members WHERE group_name = ?", (group_name,))
+
         rows = cursor.fetchall()
         conn.close()
         return [row[0] for row in rows]
+    
     except Exception as e:
         print(f"[DB ERROR] get_group_members: {e}")
         return []
+
+def block_user(username, blocked_username):
+    """
+    Blocks a user so they cannot send messages to username.
+    INSERT OR IGNORE prevents errors if the same user is blocked twice.
+    Returns True if successful.
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR IGNORE INTO blocked_users (user_id, blocked_user_id) VALUES (?, ?)", (username, blocked_username))
+        conn.commit()
+        conn.close()
+
+        print(f"[DB] '{username}' blocked '{blocked_username}'")
+        return True
+    
+    except Exception as e:
+        print(f"[DB ERROR] block_user: {e}")
+        return False
