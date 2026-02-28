@@ -41,3 +41,9 @@ class ClientHandler:
             print("=== CONNECTION FAILED ===")
             print("Unable to establish connection to server.")
             print("Please verify server availability.")
+    
+    #Logs in the user into the ChatApp
+    def login(self, username):
+        self.username = username
+        msg = build_tcp_message(LOGIN, username, "SERVER")
+        self.tcp_socket.sendall(msg.encode())
