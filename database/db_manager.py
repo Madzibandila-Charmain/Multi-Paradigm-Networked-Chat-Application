@@ -201,7 +201,25 @@ def remove_from_group(group_name, username):
         conn.commit()
         conn.close()
         print(f"[DB] '{username}' removed from group '{group_name}'")
-        
+
     except Exception as e:
         print(f"[DB ERROR] remove_from_group: {e}")
 
+def get_group_members(group_name):
+    """
+    Returns a list of usernames who are members of the given group.
+    Returns an empty list if the group does not exist.
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT username FROM group_members WHERE group_name = ?",
+            (group_name,)
+        )
+        rows = cursor.fetchall()
+        conn.close()
+        return [row[0] for row in rows]
+    except Exception as e:
+        print(f"[DB ERROR] get_group_members: {e}")
+        return []
