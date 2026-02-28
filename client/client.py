@@ -51,7 +51,7 @@ class ClientHandler:
     #Sends a message
     def send_text(self, receiver, text):
         msg = build_tcp_message(TEXT, self.username, receiver, text)
-        self.tcp_socket.sendall(msg.encode())
+        self.tcp_socket.sendall(msg)
 
     #Receives a message
     def receive_messages(self):
