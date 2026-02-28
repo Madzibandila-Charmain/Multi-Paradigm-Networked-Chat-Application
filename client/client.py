@@ -28,7 +28,7 @@ class ClientHandler:
     def __init__(self):
         self.username = None
         self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.udp_socket = socket.socket(socket.AF_NET, socket.SOCK_DGRAM)
+        self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
     #Connects to the server using TCP
     def connect(self):
