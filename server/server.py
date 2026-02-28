@@ -63,3 +63,43 @@ def is_online(username):
     """
     with online_clients_lock:
         return username in online_clients
+    
+# Helper functions 
+# These functions handle sending data through sockets. Sockets only understand bytes so the string must be encoded 
+
+def send_message(sock, msg_type, sender, receiver, body=""):
+    """
+    Builds TCP message using our protocol format and sends it
+    Return True if sent successfully, False otherwise
+    """
+    try:
+        message = build_tcp_message(msg_type, sender, receiver, body)
+        sock.sendall(message.encode("utf-8"))
+        return True
+    
+    except Exception as e:
+        print(f"[ERROR] Failed to send {msg_type} to {receiver}: {e}")
+        return False
+    
+def send_file(sock, msg_type, sender, receiver, file_data):
+    """
+    Sends a binary file over TCP.
+    Files are raw bytes so we build the header as text, encode it,
+    then add the raw file bytes directly after - all in one sendall call.
+    The receiver knows how many bytes to read from the SIZE field.
+    """
+    try:
+        size = len(file_data)
+        header = (
+            f"TYPE: {msg_type}\r\n"
+            f"FROM: {sender}\r\n"
+            f"TO: {receiver}\r\n"
+            f"TIMESTAMP: {get_timestamp()}\r\n"
+            f"SIZE: {size}"
+            f"{HEADER_BODY_SEPARATOR}"
+        )
+        sock.sendall(header.encode("utf-8") + file_data)
+        return True
+    except Exception as e:
+        print(f"[ERROR] Failed to send file to {receiver}: {e}")
+        return False
