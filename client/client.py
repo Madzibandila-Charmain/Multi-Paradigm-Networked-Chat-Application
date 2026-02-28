@@ -75,4 +75,9 @@ class ClientHandler:
                 print(f"│ {error_msg}")
                 print("└" + "─"*len(error_msg) + "\n")
                 break
-
+    
+    #Listens for incoming messages from the server using threading
+    def receiving_thread(self):
+        thread = threading.Thread(target=self.receive_messages)
+        thread.daemon = True      #Ensures the thread stops automatically when the main program exits
+        thread.start()
