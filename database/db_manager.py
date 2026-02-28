@@ -189,3 +189,19 @@ def add_to_group(group_name, username):
     except Exception as e:
         print(f"[DB ERROR] add_to_group: {e}")
         return False
+    
+def remove_from_group(group_name, username):
+    """
+    Removes a user from a group.
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM group_members WHERE group_name = ? AND username = ?", (group_name, username))
+        conn.commit()
+        conn.close()
+        print(f"[DB] '{username}' removed from group '{group_name}'")
+        
+    except Exception as e:
+        print(f"[DB ERROR] remove_from_group: {e}")
+
