@@ -33,3 +33,23 @@ def detect_file_type(filename):
         return DOCUMENT
     else:
         return None
+    
+#Sends file using TCP
+def send_file(tcp_socket, sender, receiver, filepath):
+    if not os.path.exists(filepath):
+        print("[ERROR] File does not exist.")
+        return
+    
+    msg_type = detect_file_type(filepath)
+
+    if not msg_type:
+        print("[ERROR] Unsupported file type.")
+        return
+    
+    #Reads file as binary
+    with open(filepath, "rb") as f:
+        file_data = f.read()
+
+    size = len(file_data)
+
+    
