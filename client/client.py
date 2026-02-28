@@ -28,7 +28,7 @@ class ClientHandler:
     def __init__(self):
         self.username = None
         self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.udp_socket = socket.socket(socket.AF_NET, socket.SOCK_DGRAM)
+        self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
     #Connects to the server using TCP
     def connect(self):
@@ -81,3 +81,9 @@ class ClientHandler:
         thread = threading.Thread(target=self.receive_messages)
         thread.daemon = True      #Ensures the thread stops automatically when the main program exits
         thread.start()
+
+    #Status updates using UDP
+    def send_typing(self, receiver):
+        msg = build_udp_message(TYPING, self.username, receiver)
+        self.udp_socket.sendto(msg.encode(), (HOST, UDP_PORT))
+    
