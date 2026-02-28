@@ -242,3 +242,23 @@ def block_user(username, blocked_username):
     except Exception as e:
         print(f"[DB ERROR] block_user: {e}")
         return False
+    
+def is_blocked(username, sender_username):
+    """
+    Checks if sender username is blocked by username.
+    The server calls this before routing every message.
+    Returns True if blocked, False if not.
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""SELECT 1 FROM blocked_users WHERE user_id = ? AND blocked_user_id = ?""", (username, sender_username))
+
+        row = cursor.fetchone()
+        conn.close()
+
+        return row is not None
+    
+    except Exception as e:
+        print(f"[DB ERROR] is_blocked: {e}")
+        return False
