@@ -126,3 +126,18 @@ def get_offline_messages(username):
     except Exception as e:
         print(f"[DB ERROR] get_offline_messages: {e}")
         return []
+    
+def mark_delivered(message_id):
+    """
+    Mark a message as delivered after it has been sent to the recipient.
+    Sets delivered = 1 so its not sent again on the next log
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE message SET delivered = 1 WHERE message_id = ?", (message_id))
+        conn.commit()
+        conn.close()
+
+    except Exception as e:
+        print(f"[DB ERROR] mark_delivered: {e}")
