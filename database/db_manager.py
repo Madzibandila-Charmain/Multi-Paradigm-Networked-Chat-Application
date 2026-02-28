@@ -90,3 +90,20 @@ def set_user_status(username, status):
         conn.close()
     except Exception as e:
         print(f"[DB ERROR] set_user-status: {e}")
+
+def save_message(sender, receiver, msg_type, content, timestamp):
+    """
+    Stores a message for a user who is currently offline.
+    Delivered is set at 0 until the recipient comes back online 
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.excecute("""INSERT INTO messages (sender, receiver, msg_type, content, timestamp) VALUES (?, ?, ?, ?, ?, 0)""", (sender, receiver, msg_type, content, timestamp))
+        conn.commit()
+        conn.close()
+        print(f"[DB] Message from '{sender}' to '{receiver}' stored.")
+
+    except Exception as e:
+        print(f"[DB] save_message: {e}")
+
