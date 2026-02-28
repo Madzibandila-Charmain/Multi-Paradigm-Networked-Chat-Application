@@ -29,3 +29,15 @@ class ClientHandler:
         self.username = None
         self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.udp_socket = socket.socket(socket.AF_NET, socket.SOCK_DGRAM)
+
+    #Connects to the server using TCP
+    def connect(self):
+        try:
+            self.tcp_socket.connect((HOST, TCP_PORT))
+            print("=== SEVER HANDSHAKE COMPLETE ===")
+            print(f"Connected to server at {HOST}:{TCP_PORT}")
+            print("Communication channnel open.")
+        except Exception as e:
+            print("=== CONNECTION FAILED ===")
+            print("Unable to establish connection to server.")
+            print("Please verify server availability.")
