@@ -107,3 +107,22 @@ def save_message(sender, receiver, msg_type, content, timestamp):
     except Exception as e:
         print(f"[DB] save_message: {e}")
 
+def get_offline_messages(username):
+    """
+    Retrieves all underlivered messages for that user.
+    Called whne  a user logs in so that they receive messages sent while offline
+    Returns a lsit of dicts ordered from oldest to newest.
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""SELECT message_id, sender, msg_type, content, timestamp FROM messages WHERE receiver = ? AND delivered = 0 ORDER BY timestamp ASC""", (username))
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [{"message_id": r[0], "sender": r[1], "msg_type": r[2], "content": r[3], "timestamp": r[4]} for r in rows]
+    
+    except Exception as e:
+        print(f"[DB ERROR] get_offline_messages: {e}")
+        return []
