@@ -46,28 +46,47 @@ class ClientHandler:
     def login(self, username):
         self.username = username
         msg = build_tcp_message(LOGIN, username, "SERVER")
-        self.tcp_socket.sendall(msg.encode())
+        self.tcp_socket.sendall(msg)
     
     #Sends a message
     def send_text(self, receiver, text):
         msg = build_tcp_message(TEXT, self.username, receiver, text)
-        self.tcp_socket.sendall(msg.encode())
+        self.tcp_socket.sendall(msg)
 
     #Receives a message
     def receive_messages(self):
+        buffer = b""
+
         while True:
             try:
-                data = self.tcp_socket.recv(BUFFER_SIZE)
+                chunk = self.tcp_socket.recv(BUFFER_SIZE)
 
-                if not data:
+                if not chunk:
                     break
 
-                header, body = data.decode().split(HEADER_BODY_SEPARATOR, 1)
-                parsed = parse_tcp_header(header)
+                buffer += chunk
 
-                print(f"\n┌─[{parsed['FROM']}] @ {parsed['TIMESTAMP']}")
-                print(f"| {body}")
-                print("└" + "─" * (len(str(body))+2))
+                #Processes complete messages
+                while HEADER_BODY_SEPARATOR.encode() in buffer:
+                    header_bytes, remainder = buffer.split(HEADER_BODY_SEPARATOR.encode(), 1)
+                
+                    header = header_bytes.decode()
+                    parsed = parse_tcp_header(header)
+                    size = int(parsed["SIZE"])
+                    total = len(header_bytes) + len(HEADER_BODY_SEPARATOR.encode()) + size
+
+                    #Waits until full body arrives
+                    if len(buffer) < total:
+                        break
+
+                    body_start = len(header_bytes) + len(HEADER_BODY_SEPARATOR.encode())
+                    body_bytes = buffer[body_start:body_start + size]
+
+                    #Remove processed message from buffer
+                    buffer = buffer[total:]
+
+                    #Handles the message
+                    self.handle_message(parsed, body_bytes)
 
             except Exception as e:
                 error_msg = str(e)
@@ -75,6 +94,32 @@ class ClientHandler:
                 print(f"│ {error_msg}")
                 print("└" + "─"*len(error_msg) + "\n")
                 break
+    
+    def handle_message(self, parsed, body_bytes):
+        msg_type = parsed["TYPE"]
+        sender = parsed["FROM"]
+        timestamp = parsed["TIMESTAMP"]
+
+        #Handles Text only
+        if msg_type == TEXT:
+            text = body_bytes.decode("utf-8")
+            print(f"\n┌─[{parsed['FROM']}] @ {parsed['TIMESTAMP']}")
+            print(f"| {text}")
+            print("└" + "─" * (len(str(text))+2))
+
+        #Handles files
+        elif msg_type in [IMAGE, VIDEO_FILE, AUDIO_FILE, DOCUMENT]:
+            if not os.path.exists(MEDIA_DIR):
+                os.makedirs(MEDIA_DIR)
+                
+            filename = f"{timestamp}_{sender}"
+            filepath = os.path.join(MEDIA_DIR, filename)
+
+            with open(filepath, "wb") as f:
+                f.write(body_bytes)
+                    
+            print(f"\n[FILE RECEIVED] From {sender}")
+            print(f"Saved to: {filepath}")
     
     #Listens for incoming messages from the server using threading
     def receiving_thread(self):
