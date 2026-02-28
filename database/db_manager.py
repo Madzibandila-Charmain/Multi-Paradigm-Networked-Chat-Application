@@ -164,3 +164,28 @@ def create_group(group_name, creator_username):
     except Exception as e:
         print(f"[DB ERROR] create_group: {e}")
         return False
+
+def add_to_group(group_name, username):
+    """
+    Adds a user to an existing group.
+    Returns True if successful, False if the user is already a member.
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO group_members (group_name, username) VALUES (?, ?)",
+            (group_name, username)
+        )
+        conn.commit()
+        conn.close()
+        print(f"[DB] '{username}' added to group '{group_name}'")
+        return True
+    
+    except sqlite3.IntegrityError:
+        print(f"[DB] '{username}' is already in group '{group_name}'")
+        return False
+    
+    except Exception as e:
+        print(f"[DB ERROR] add_to_group: {e}")
+        return False
