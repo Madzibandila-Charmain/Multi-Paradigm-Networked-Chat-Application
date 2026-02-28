@@ -52,4 +52,27 @@ class ClientHandler:
     def send_text(self, receiver, text):
         msg = build_tcp_message(TEXT, self.username, receiver, text)
         self.tcp_socket.sendall(msg.encode())
-        
+
+    #Receives a message
+    def receive_messages(self):
+        while True:
+            try:
+                data = self.tcp_socket.recv(BUFFER_SIZE)
+
+                if not data:
+                    break
+
+                header, body = data.decode().split(HEADER_BODY_SEPARATOR, 1)
+                parsed = parse_tcp_header(header)
+
+                print(f"\n┌─[{parsed['FROM']}] @ {parsed['TIMESTAMP']}")
+                print(f"| {body}")
+                print("└" + "─" * (len(str(body))+2))
+
+            except Exception as e:
+                error_msg = str(e)
+                print(f"\n┌─[ERROR] NETWORK EXCEPTION")
+                print(f"│ {error_msg}")
+                print("└" + "─"*len(error_msg) + "\n")
+                break
+
