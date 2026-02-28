@@ -46,7 +46,7 @@ class ClientHandler:
     def login(self, username):
         self.username = username
         msg = build_tcp_message(LOGIN, username, "SERVER")
-        self.tcp_socket.sendall(msg.encode())
+        self.tcp_socket.sendall(msg)
     
     #Sends a message
     def send_text(self, receiver, text):
@@ -62,12 +62,36 @@ class ClientHandler:
                 if not data:
                     break
 
-                header, body = data.decode().split(HEADER_BODY_SEPARATOR, 1)
+                header_bytes, body_bytes = data.split(HEADER_BODY_SEPARATOR.encode(), 1)
+                
+                header = header_bytes.decode()
                 parsed = parse_tcp_header(header)
 
-                print(f"\n┌─[{parsed['FROM']}] @ {parsed['TIMESTAMP']}")
-                print(f"| {body}")
-                print("└" + "─" * (len(str(body))+2))
+                msg_type = parsed["TYPE"]
+                sender = parsed["FROM"]
+                timestamp = parsed["TIMESTAMP"]
+                size = int(parsed["SIZE"])
+
+                #Handles Text only
+                if msg_type == TEXT:
+                    text = body_bytes.decode("utf-8")
+                    print(f"\n┌─[{parsed['FROM']}] @ {parsed['TIMESTAMP']}")
+                    print(f"| {text}")
+                    print("└" + "─" * (len(str(text))+2))
+
+                #Handles files
+                elif msg_type in [IMAGE, VIDEO_FILE, AUDIO_FILE, DOCUMENT]:
+                    while len(body_bytes) < size:
+                        body_bytes += self.tcp_socket.recv(BUFFER_SIZE)
+
+                    filename = f"{timestamp}_{sender}"
+                    filepath = os.path.join(MEDIA_DIR, filename)
+
+                    with open(filepath, "wb") as f:
+                        f.write(body_bytes)
+                    
+                    print(f"\n[FILE RECEIVED] From {sender}")
+                    print(f"Saved to: {filepath}")
 
             except Exception as e:
                 error_msg = str(e)
