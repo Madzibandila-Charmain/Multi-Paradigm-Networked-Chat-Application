@@ -18,7 +18,7 @@ def get_timestamp():
     return datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
 
 
-def build_tcp_message(msg_type, sender, receiver, body=""):
+def build_tcp_message(msg_type, sender, receiver, body=b""):
     """
     Builds a complete TCP message ready to be sent over a socket.
 
@@ -32,7 +32,11 @@ def build_tcp_message(msg_type, sender, receiver, body=""):
         A string containing the full header and body separated by HEADER_BODY_SEPARATOR.
         The SIZE field in the header reflects the byte length of the body.
     """
-    body_bytes = body.encode("utf-8") if isinstance(body, str) else body
+    if isinstance(body, str):
+        body_bytes = body.encode("utf-8")
+    else:
+        body_bytes = body
+
     size = len(body_bytes)
 
     header = (
@@ -43,8 +47,9 @@ def build_tcp_message(msg_type, sender, receiver, body=""):
         f"{FIELD_SIZE}: {size}"
     )
 
-    return header + HEADER_BODY_SEPARATOR + (body if isinstance(body, str) else "")
+    full_message = header.encode() + HEADER_BODY_SEPARATOR.encode() + body_bytes
 
+    return full_message
 
 def parse_tcp_header(raw_header):
     """
