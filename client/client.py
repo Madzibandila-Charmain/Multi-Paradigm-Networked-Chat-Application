@@ -81,3 +81,9 @@ class ClientHandler:
         thread = threading.Thread(target=self.receive_messages)
         thread.daemon = True      #Ensures the thread stops automatically when the main program exits
         thread.start()
+
+    #Status updates using UDP
+    def send_typing(self, receiver):
+        msg = build_udp_message(TYPING, self.username, receiver)
+        self.udp_socket.sendto(msg.encode(), (HOST, UDP_PORT))
+    
