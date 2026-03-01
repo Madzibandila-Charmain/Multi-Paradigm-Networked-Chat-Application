@@ -181,3 +181,78 @@ def handle_login(client_socket, header, body):
     deliver_offline_messages(username, client_socket)
 
     return username
+
+def handle_logout(username):
+    """
+    Cleans up when a user disconnects - whether they typed quit or their connection just dropped.
+    Removes them from online_clients and tells everyone they left.
+    """
+    if username:
+        remove_online_client(username)
+        broadcast_status(username, USER_OFFLINE)
+        set_user_status(username, "offline")
+        print(f"[LOGOUT] {username} disconnected")
+
+def broadcast_status(username, status_type):
+    """
+    Sends a USER_ONLINE or USER_OFFLINE notification to everyone
+    currently online except the user the update is about.
+
+    The dict comprehension on the first line creates a copy of
+    online_clients without the user themselves:
+    {u: s for u, s in online_clients.items() if u != username}
+    means: for every user and socket in the dict, include them
+    only if they are not the user we are broadcasting about.
+    """
+    with online_clients_lock:
+        recipients = {u: s for u, s in online_clients.items() if u != username}
+
+    for recipient, sock in recipients.items():
+        try:
+            msg = build_udp_message(status_type, username, recipient)
+            sock.sendall(msg.encode("utf-8"))
+        except Exception as e:
+            print(f"[ERROR] Could not send {status_type} to {recipient}: {e}")
+
+def route_message(header, body, sender_socket):
+    """
+    Routes a message from sender to the receiver.
+    Looks up the recipient in online_clients.
+    If found, sends directly, if not stores ater for delivery.
+    """
+    sender = header.get(FIELD_FROM)
+    receiver = header.get(FIELD_TO)
+    msg_type = header.get(FIELD_TYPE)
+
+    if not sender or not receiver:
+        send_message(sender_socket, ERROR, "server", sender or "unknown", "Missing FROM or TO field")
+        return 
+    
+    # Checking if user is blocked
+    if is_blocked(receiver, sender):
+        send_message(sender_socket, MESSAGE_FAILED, "server", sender, f"{receiver} has blocked you")
+        return
+    
+    # Look up the recipient socktet
+    recipient_socket = get_online_client_socket(receiver)
+
+    if recipient_socket:
+        # Recipient is online - deliver directly to their socket
+        is_file = msg_type in [IMAGE, VIDEO_FILE, AUDIO_FILE, DOCUMENT]
+
+        if is_file:
+            success = send_file(recipient_socket, msg_type, sender, receiver, body)
+        else:
+            body_text = body.decode("utf-8") if body else ""
+            success = send_file(recipient_socket, msg_type, sender, receiver, body)
+
+        if success:
+            send_message(sender, ACK, "server", sender, f"Message delivered to {receiver}")
+            print(f"[ROUTE] {msg_type} from {sender} to {receiver} delivered")
+        else:
+            send_message(sender_socket, MESSAGE_FAILED, "server", sender, f"Could not deliver to {receiver}")
+    else:
+        # Recipient is offline - store message for when they log in
+        save_message(sender, receiver, msg_type, body, get_timestamp())
+        print(f"[STORE] {receiver} offline. Message from {sender} stored")
+        send_message(sender_socket, ACK, "server", sender, f"{receiver} is offline. Message staored.")
