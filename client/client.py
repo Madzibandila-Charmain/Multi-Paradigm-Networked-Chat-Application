@@ -54,18 +54,6 @@ class ClientHandler:
         msg = build_tcp_message(TEXT, self.username, receiver, text)
         self.tcp_socket.sendall(msg.encode())
 
-    #Saves any file
-    def save_file(self, header_fields, file_bytes):
-        os.makedirs(MEDIA_DIR, exist_ok=True)
-
-        filename = header_fields.get("FILENAME", "received_file")
-        filepath = os.path.join(MEDIA_DIR, filename)
-
-        with open(filepath, "wb") as f:
-            f.write(file_bytes)
-
-        print(f"[FILE RECEIVED] Saved to {filepath}")
-
     #Receives a message
     def receive_messages(self):
         buffer = b""
@@ -89,18 +77,14 @@ class ClientHandler:
                         continue
 
                     msg_type = parsed[FIELD_TYPE]
-                    size = int(parsed.get(FIELD_SIZE, 0))
-
-                    if len(buffer) < size:
-                        buffer = header_part + HEADER_BODY_SEPARATOR.encode() + buffer
-                        break
-
-                    body = buffer[:size]
-                    buffer = buffer[size:]
 
                     if msg_type in (IMAGE, VIDEO_FILE, AUDIO_FILE, DOCUMENT):
-                        self.save_file(parsed, body)
+                        receive_file(self.tcp_socket, parsed)
                     else:
+                        size = int(parsed.get(FIELD_SIZE, 0))
+                        body_bytes = buffer[:size]
+                        buffer = buffer[size:]
+                        body = body_bytes.decode()
                         print(f"\n┌─[{parsed['FROM']}] @ {parsed['TIMESTAMP']}")
                         print(f"| {body}")
                         print("└" + "─" * (len(str(body))+2))
@@ -110,6 +94,17 @@ class ClientHandler:
                 print(f"\n┌─[ERROR] NETWORK EXCEPTION")
                 print(f"│ {error_msg}")
                 print("└" + "─"*len(error_msg) + "\n")
+                break
+
+    def receive_udp(self):
+        while True:
+            try:
+                data, _ = self.udp_socket.recvfrom(BUFFER_SIZE)
+                parsed = parse_udp_message(data.decode())
+
+                if parsed:
+                    print(f"\n[{parsed['TYPE']}] from {parsed['FROM']}")
+            except:
                 break
     
     #Listens for incoming messages from the server using threading
