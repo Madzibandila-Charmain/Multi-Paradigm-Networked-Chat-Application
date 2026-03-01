@@ -1,5 +1,6 @@
-# Ranwashe Mukovhe
-# Main TCP server 
+# Ranwashe Mukovhe -Main TCP server 
+# This file is the heart of the chat application. It manages all connected clients, routes messages between them,
+# handles login and logout, and coordinates with the database.
 
 import socket 
 import threading
