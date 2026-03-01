@@ -22,6 +22,7 @@ from utils.message import (
     build_tcp_message, parse_tcp_header,
     build_udp_message, parse_udp_message, get_timestamp
 )
+from file_transfer import send_file, receive_file
 
 class ClientHandler:
 
@@ -46,28 +47,63 @@ class ClientHandler:
     def login(self, username):
         self.username = username
         msg = build_tcp_message(LOGIN, username, "SERVER")
-        self.tcp_socket.sendall(msg.encode("utf-8"))
+        self.tcp_socket.sendall(msg.encode())
     
     #Sends a message
     def send_text(self, receiver, text):
         msg = build_tcp_message(TEXT, self.username, receiver, text)
-        self.tcp_socket.sendall(msg.encode("uft-8"))
+        self.tcp_socket.sendall(msg.encode())
+
+    #Saves any file
+    def save_file(self, header_fields, file_bytes):
+        os.makedirs(MEDIA_DIR, exist_ok=True)
+
+        filename = header_fields.get("FILENAME", "received_file")
+        filepath = os.path.join(MEDIA_DIR, filename)
+
+        with open(filepath, "wb") as f:
+            f.write(file_bytes)
+
+        print(f"[FILE RECEIVED] Saved to {filepath}")
 
     #Receives a message
     def receive_messages(self):
+        buffer = b""
+
         while True:
             try:
                 data = self.tcp_socket.recv(BUFFER_SIZE)
 
                 if not data:
+                    print("[SERVER DISCONNECTED]")
                     break
 
-                header, body = data.decode().split(HEADER_BODY_SEPARATOR, 1)
-                parsed = parse_tcp_header(header)
+                buffer += data
 
-                print(f"\n┌─[{parsed['FROM']}] @ {parsed['TIMESTAMP']}")
-                print(f"| {body}")
-                print("└" + "─" * (len(str(body))+2))
+                while HEADER_BODY_SEPARATOR.encode() in buffer:
+                    header_part, buffer = buffer.split(HEADER_BODY_SEPARATOR.encode(), 1)
+                    header_text = header_part.decode()
+                    parsed = parse_tcp_header(header_text)
+
+                    if not parsed:
+                        continue
+
+                    msg_type = parsed[FIELD_TYPE]
+                    size = int(parsed.get(FIELD_SIZE, 0))
+
+                    if len(buffer) < size:
+                        buffer = header_part + HEADER_BODY_SEPARATOR.encode() + buffer
+                        break
+
+                    body = buffer[:size]
+                    buffer = buffer[size:]
+
+                    if msg_type in (IMAGE, VIDEO_FILE, AUDIO_FILE, DOCUMENT):
+                        self.save_file(parsed, body)
+                    else:
+                        print(f"\n┌─[{parsed['FROM']}] @ {parsed['TIMESTAMP']}")
+                        print(f"| {body}")
+                        print("└" + "─" * (len(str(body))+2))
 
             except Exception as e:
                 error_msg = str(e)
