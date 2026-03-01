@@ -256,3 +256,27 @@ def route_message(header, body, sender_socket):
         save_message(sender, receiver, msg_type, body, get_timestamp())
         print(f"[STORE] {receiver} offline. Message from {sender} stored")
         send_message(sender_socket, ACK, "server", sender, f"{receiver} is offline. Message staored.")
+
+# P2P Signalling. When both the sender and receiver are online and a file transfer is needed
+# The server shares both IP addresses so they can connect directly to each other
+# After this thr server steps out entirely
+def signal_p2p(sender, receiver, sender_socket, receiver_socket):
+    """
+    Gets both clients' IP addresses and sends each one the other's IP.
+    .getpeername() returns the (ip, port) of the connected client.[0] gets just the IP part.
+    After this the two clients handle the file transfer themselves.
+    """
+    try:
+        sender_ip   = sender_socket.getpeername()[0]
+        receiver_ip = receiver_socket.getpeername()[0]
+
+        send_message(sender_socket, "P2P_SIGNAL", "server", sender,
+                     f"peer_ip: {receiver_ip}\npeer_username: {receiver}")
+
+        send_message(receiver_socket, "P2P_SIGNAL", "server", receiver,
+                     f"peer_ip: {sender_ip}\npeer_username: {sender}")
+
+        print(f"[P2P] Signalled {sender} and {receiver} for direct transfer")
+
+    except Exception as e:
+        print(f"[ERROR] P2P signalling failed: {e}")
