@@ -19,8 +19,12 @@ from constants import (
 )
 from utils.message import build_tcp_message, parse_tcp_header, build_udp_message, get_timestamp
 
-# Import db_manager
-from database.db_manager import (verify_user, set_user_status, save_message, get_offline_messages, mark_delivered, get_group_members, is_blocked)
+from database.db_manager import (
+    verify_user, set_user_status, save_message,
+    get_offline_messages, mark_delivered,
+    get_group_members, is_blocked,
+    block_user, create_group, add_to_group, remove_from_group
+)
 
 # Shared states 
 # The lock is needed because multiple threads run at the same time and they all share this dictionary. Without the lock two threads
@@ -50,15 +54,15 @@ def remove_online_client(username):
 
 def get_online_client_socket(username):
     """
-    Looks up a users socket by their username
-    Returns their socket if online, or None if they are not in the dictionary
+    Looks up a users socket by their username.
+    Returns their socket if online, or None if they are not in the dictionary.
     """
     with online_clients_lock:
         return online_clients.get(username, None)
     
 def is_online(username):
     """
-     Checks if a username is currently in the online clients dictionary.
+    Checks if a username is currently in the online clients dictionary.
     """
     with online_clients_lock:
         return username in online_clients
@@ -68,8 +72,8 @@ def is_online(username):
 
 def send_message(sock, msg_type, sender, receiver, body=""):
     """
-    Builds TCP message using our protocol format and sends it
-    Return True if sent successfully, False otherwise
+    Builds TCP message using our protocol format and sends it.
+    Returns True if sent successfully, False otherwise.
     """
     try:
         message = build_tcp_message(msg_type, sender, receiver, body)
@@ -106,15 +110,15 @@ def send_file(sock, msg_type, sender, receiver, file_data):
     
 def receive_full_message(sock):
     """
-    Reads a complete message from a socket one chunck at a time
-    Keeps reading until the full header and body have arrived
-    Returns (header_dict, boudy_bytes) or (None, None) if connection dropped.
+    Reads a complete message from a socket one chunk at a time.
+    Keeps reading until the full header and body have arrived.
+    Returns (header_dict, body_bytes) or (None, None) if connection dropped.
     """
     try:
-        raw = b""  # b"" means empt bytes
+        raw = b""  # b"" means empty bytes
         separator = HEADER_BODY_SEPARATOR.encode("utf-8")
 
-        # Keep reading chunkcs until we have the complete header
+        # Keep reading chunks until we have the complete header
         while separator not in raw:
             chunk = sock.recv(BUFFER_SIZE)
             if not chunk:
@@ -122,14 +126,15 @@ def receive_full_message(sock):
                 return None, None
             raw += chunk
 
-        # Split at the separator- header on the left and start of body on the right
-        header_bytes, leftover =  raw.split(separator, 1)
-        header = parse_tcp_header(header_bytes.decode("uft-8"))
+        # Split at the separator - header on the left and start of body on the right
+        header_bytes, leftover = raw.split(separator, 1)
+
+        header = parse_tcp_header(header_bytes.decode("utf-8"))
 
         if header is None:
             return None, None
         
-        # Read the body base on the size field in the header
+        # Read the body based on the SIZE field in the header
         body_size = int(header.get(FIELD_SIZE, 0))
         body = leftover
 
@@ -145,6 +150,18 @@ def receive_full_message(sock):
     except Exception as e:
         print(f"[ERROR] receive_full_message: {e}")
         return None, None
+
+def deliver_offline_messages(username, client_socket):
+    """
+    Fetches all undelivered messages for a user from the database
+    and sends them one by one. Marks each as delivered after sending.
+    Called right after a user logs in.
+    """
+    messages = get_offline_messages(username)
+    for msg in messages:
+        send_message(client_socket, msg["msg_type"], msg["sender"], username, msg["content"])
+        mark_delivered(msg["message_id"])
+
     
 def handle_login(client_socket, header, body):
     """
@@ -162,22 +179,21 @@ def handle_login(client_socket, header, body):
     
     # Verify that the user is in the database
     if not verify_user(username, password):
-        send_message(client_socket, ERROR, "server", "username", "Invalid credentials")
+        send_message(client_socket, ERROR, "server", username, "Invalid credentials")
         return None
     
-    # Successful
     print(f"[LOGIN] {username} logged in")
 
-    # Add to online dictionary so other client can reach them
+    # Add to online dictionary so other clients can reach them
     add_online_client(username, client_socket)
 
     # Notify all that the user is online
     broadcast_status(username, USER_ONLINE)
 
-    # Send confimation back to the client
+    # Send confirmation back to the client
     send_message(client_socket, ACK, "server", username, "Login successful")
 
-    # Deilver offline messages
+    # Deliver offline messages
     deliver_offline_messages(username, client_socket)
 
     return username
@@ -218,7 +234,7 @@ def route_message(header, body, sender_socket):
     """
     Routes a message from sender to the receiver.
     Looks up the recipient in online_clients.
-    If found, sends directly, if not stores ater for delivery.
+    If found, sends directly, if not stores for later delivery.
     """
     sender = header.get(FIELD_FROM)
     receiver = header.get(FIELD_TO)
@@ -228,12 +244,12 @@ def route_message(header, body, sender_socket):
         send_message(sender_socket, ERROR, "server", sender or "unknown", "Missing FROM or TO field")
         return 
     
-    # Checking if user is blocked
+    # Check if sender is blocked by receiver
     if is_blocked(receiver, sender):
         send_message(sender_socket, MESSAGE_FAILED, "server", sender, f"{receiver} has blocked you")
         return
     
-    # Look up the recipient socktet
+    # Look up the recipient socket
     recipient_socket = get_online_client_socket(receiver)
 
     if recipient_socket:
@@ -244,10 +260,10 @@ def route_message(header, body, sender_socket):
             success = send_file(recipient_socket, msg_type, sender, receiver, body)
         else:
             body_text = body.decode("utf-8") if body else ""
-            success = send_file(recipient_socket, msg_type, sender, receiver, body)
+            success = send_message(recipient_socket, msg_type, sender, receiver, body_text)
 
         if success:
-            send_message(sender, ACK, "server", sender, f"Message delivered to {receiver}")
+            send_message(sender_socket, ACK, "server", sender, f"Message delivered to {receiver}")
             print(f"[ROUTE] {msg_type} from {sender} to {receiver} delivered")
         else:
             send_message(sender_socket, MESSAGE_FAILED, "server", sender, f"Could not deliver to {receiver}")
@@ -255,15 +271,15 @@ def route_message(header, body, sender_socket):
         # Recipient is offline - store message for when they log in
         save_message(sender, receiver, msg_type, body, get_timestamp())
         print(f"[STORE] {receiver} offline. Message from {sender} stored")
-        send_message(sender_socket, ACK, "server", sender, f"{receiver} is offline. Message staored.")
+        send_message(sender_socket, ACK, "server", sender, f"{receiver} is offline. Message stored.")
 
 # P2P Signalling. When both the sender and receiver are online and a file transfer is needed
 # The server shares both IP addresses so they can connect directly to each other
-# After this thr server steps out entirely
+# After this the server steps out entirely
 def signal_p2p(sender, receiver, sender_socket, receiver_socket):
     """
     Gets both clients' IP addresses and sends each one the other's IP.
-    .getpeername() returns the (ip, port) of the connected client.[0] gets just the IP part.
+    .getpeername() returns the (ip, port) of the connected client. [0] gets just the IP part.
     After this the two clients handle the file transfer themselves.
     """
     try:
@@ -271,7 +287,6 @@ def signal_p2p(sender, receiver, sender_socket, receiver_socket):
         receiver_ip = receiver_socket.getpeername()[0]
 
         send_message(sender_socket, "P2P_SIGNAL", "server", sender, f"peer_ip: {receiver_ip}\npeer_username: {receiver}")
-
         send_message(receiver_socket, "P2P_SIGNAL", "server", receiver, f"peer_ip: {sender_ip}\npeer_username: {sender}")
 
         print(f"[P2P] Signalled {sender} and {receiver} for direct transfer")
