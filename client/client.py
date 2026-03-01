@@ -46,12 +46,12 @@ class ClientHandler:
     def login(self, username):
         self.username = username
         msg = build_tcp_message(LOGIN, username, "SERVER")
-        self.tcp_socket.sendall(msg)
+        self.tcp_socket.sendall(msg.encode("utf-8"))
     
     #Sends a message
     def send_text(self, receiver, text):
         msg = build_tcp_message(TEXT, self.username, receiver, text)
-        self.tcp_socket.sendall(msg)
+        self.tcp_socket.sendall(msg.encode("uft-8"))
 
     #Receives a message
     def receive_messages(self):
