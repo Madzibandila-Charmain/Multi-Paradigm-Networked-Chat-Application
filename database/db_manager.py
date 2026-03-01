@@ -1,4 +1,4 @@
-# CSC3002F - Multi-Paradigm Chat Application
+# Ranwashe Mukovhe - Database manager creation
 # All database read/write functions
 # The server calls these functions - it never accesses the database directly
 
@@ -33,7 +33,7 @@ def register_user(username, password):
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO users (username, hashed_password) VALUES (?, ?)", (username, hash_password(password)))
+        cursor.execute("INSERT INTO users (username, password_hash ) VALUES (?, ?)", (username, hash_password(password)))
         conn.commit()
         conn.close()
         print(f"[DB] User '{username}' registered")
@@ -58,10 +58,7 @@ def verify_user(username, password):
         cursor = conn.cursor()
 
         # Fetch the stored hashed password for this username
-        cursor.execute(
-            "SELECT password_hash FROM users WHERE username = ?",
-            (username,)
-        )
+        cursor.execute("SELECT password_hash FROM users WHERE username = ?", (username,))
 
         row = cursor.fetchone()
         conn.close()
@@ -99,7 +96,7 @@ def save_message(sender, receiver, msg_type, content, timestamp):
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.excecute("""INSERT INTO messages (sender, receiver, msg_type, content, timestamp) VALUES (?, ?, ?, ?, ?, 0)""", (sender, receiver, msg_type, content, timestamp))
+        cursor.execute("""INSERT INTO messages (sender, receiver, msg_type, content, timestamp, delivered) VALUES (?, ?, ?, ?, ?, 0)""", (sender, receiver, msg_type, content, timestamp))
         conn.commit()
         conn.close()
         print(f"[DB] Message from '{sender}' to '{receiver}' stored.")
@@ -116,7 +113,7 @@ def get_offline_messages(username):
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute("""SELECT message_id, sender, msg_type, content, timestamp FROM messages WHERE receiver = ? AND delivered = 0 ORDER BY timestamp ASC""", (username))
+        cursor.execute("""SELECT message_id, sender, msg_type, content, timestamp FROM messages WHERE receiver = ? AND delivered = 0 ORDER BY timestamp ASC""", (username,))
 
         rows = cursor.fetchall()
         conn.close()
@@ -135,7 +132,7 @@ def mark_delivered(message_id):
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute("UPDATE message SET delivered = 1 WHERE message_id = ?", (message_id))
+        cursor.execute("UPDATE messages SET delivered = 1 WHERE message_id = ?", (message_id,))
         conn.commit()
         conn.close()
 
