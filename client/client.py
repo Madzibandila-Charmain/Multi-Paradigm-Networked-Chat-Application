@@ -55,6 +55,8 @@ class ClientHandler:
         msg = build_tcp_message(LOGOUT, self.username, "SERVER")
         self.tcp_socket.sendall(msg.encode())
         self.keep_running = False
+        self.tcp_socket.close()
+        self.udp_socket.close()
 
     #File transfer
     def send_file(self, receiver, filepath):
@@ -120,9 +122,17 @@ class ClientHandler:
                         body_bytes = buffer[:size]
                         buffer = buffer[size:]
                         body = body_bytes.decode()
-                        print(f"\n┌─[{parsed['FROM']}] @ {parsed['TIMESTAMP']}")
-                        print(f"| {body}")
-                        print("└" + "─" * (len(str(body))+2))
+
+                        if msg_type == ACK:
+                            print(f"[ACK] {parsed['FROM']} confirmed receipt.")
+                        elif msg_type == ERROR:
+                            print(f"[ERROR] {parsed['FROM']}: {body}")
+                        elif msg_type == MESSAGE_FAILED:
+                            print(f"[FAILED] Message to {parsed['TO']} could not be delivered.")
+                        else:
+                            print(f"\n┌─[{parsed['FROM']}] @ {parsed['TIMESTAMP']}")
+                            print(f"| {body}")
+                            print("└" + "─" * (len(str(body))+2))
 
             except Exception as e:
                 error_msg = str(e)
@@ -132,7 +142,7 @@ class ClientHandler:
                 break
 
     def receive_udp(self):
-        while True:
+        while self.keep_running:
             try:
                 data, _ = self.udp_socket.recvfrom(BUFFER_SIZE)
                 parsed = parse_udp_message(data.decode())
@@ -158,18 +168,17 @@ class ClientHandler:
         msg = build_udp_message(TYPING, self.username, receiver)
         self.udp_socket.sendto(msg.encode(), (HOST, UDP_PORT))
 
-    def receive_udp(self):
+    def send_keep_alive(self):
         while self.keep_running:
             try:
-                data, _ = self.udp_socket.recvfrom(BUFFER_SIZE)
-                parsed = parse_udp_message(data.decode())
-                if parsed:
-                    print(f"\n[{parsed['TYPE']}] from {parsed['FROM']}")
+                msg = build_tcp_message(KEEP_ALIVE, self.username, "SERVER")
+                self.tcp_socket.sendall(msg.encode())
+                time.sleep(30)  # every 30 seconds
             except:
                 break
 
-    def udp_thread(self):
-        thread = threading.Thread(target=self.receive_udp)
+    def keep_alive_thread(self):
+        thread = threading.Thread(target=self.send_keep_alive)
         thread.daemon = True
         thread.start()
 
