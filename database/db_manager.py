@@ -1,4 +1,4 @@
-# CSC3002F - Multi-Paradigm Chat Application
+# Ranwashe Mukovhe - Database manager creation
 # All database read/write functions
 # The server calls these functions - it never accesses the database directly
 
@@ -33,7 +33,7 @@ def register_user(username, password):
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO users (username, hashed_password) VALUES (?, ?)", (username, hash_password(password)))
+        cursor.execute("INSERT INTO users (username, password_hash ) VALUES (?, ?)", (username, hash_password(password)))
         conn.commit()
         conn.close()
         print(f"[DB] User '{username}' registered")
@@ -58,10 +58,7 @@ def verify_user(username, password):
         cursor = conn.cursor()
 
         # Fetch the stored hashed password for this username
-        cursor.execute(
-            "SELECT password_hash FROM users WHERE username = ?",
-            (username,)
-        )
+        cursor.execute("SELECT password_hash FROM users WHERE username = ?", (username,))
 
         row = cursor.fetchone()
         conn.close()
@@ -90,3 +87,175 @@ def set_user_status(username, status):
         conn.close()
     except Exception as e:
         print(f"[DB ERROR] set_user-status: {e}")
+
+def save_message(sender, receiver, msg_type, content, timestamp):
+    """
+    Stores a message for a user who is currently offline.
+    Delivered is set at 0 until the recipient comes back online 
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""INSERT INTO messages (sender, receiver, msg_type, content, timestamp, delivered) VALUES (?, ?, ?, ?, ?, 0)""", (sender, receiver, msg_type, content, timestamp))
+        conn.commit()
+        conn.close()
+        print(f"[DB] Message from '{sender}' to '{receiver}' stored.")
+
+    except Exception as e:
+        print(f"[DB] save_message: {e}")
+
+def get_offline_messages(username):
+    """
+    Retrieves all underlivered messages for that user.
+    Called whne  a user logs in so that they receive messages sent while offline
+    Returns a lsit of dicts ordered from oldest to newest.
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""SELECT message_id, sender, msg_type, content, timestamp FROM messages WHERE receiver = ? AND delivered = 0 ORDER BY timestamp ASC""", (username,))
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [{"message_id": r[0], "sender": r[1], "msg_type": r[2], "content": r[3], "timestamp": r[4]} for r in rows]
+    
+    except Exception as e:
+        print(f"[DB ERROR] get_offline_messages: {e}")
+        return []
+    
+def mark_delivered(message_id):
+    """
+    Mark a message as delivered after it has been sent to the recipient.
+    Sets delivered = 1 so its not sent again on the next log
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE messages SET delivered = 1 WHERE message_id = ?", (message_id,))
+        conn.commit()
+        conn.close()
+
+    except Exception as e:
+        print(f"[DB ERROR] mark_delivered: {e}")
+
+def create_group(group_name, creator_username):
+    """
+    Creates a new group and adds the creator as the first member.
+    Returns True if successful, False if the group name already exists.
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO groups (group_name, created_by) VALUES (?, ?)",(group_name, creator_username))
+        cursor.execute("INSERT INTO group_members (group_name, username) VALUES (?, ?)",(group_name, creator_username))
+        conn.commit()
+        conn.close()
+        print(f"[DB] Group '{group_name}' created by '{creator_username}'")
+        return True
+    
+    except sqlite3.IntegrityError:
+        print(f"[DB] Group '{group_name}' already exists")
+        return False
+    
+    except Exception as e:
+        print(f"[DB ERROR] create_group: {e}")
+        return False
+
+def add_to_group(group_name, username):
+    """
+    Adds a user to an existing group.
+    Returns True if successful, False if the user is already a member.
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO group_members (group_name, username) VALUES (?, ?)",
+            (group_name, username)
+        )
+        conn.commit()
+        conn.close()
+        print(f"[DB] '{username}' added to group '{group_name}'")
+        return True
+    
+    except sqlite3.IntegrityError:
+        print(f"[DB] '{username}' is already in group '{group_name}'")
+        return False
+    
+    except Exception as e:
+        print(f"[DB ERROR] add_to_group: {e}")
+        return False
+    
+def remove_from_group(group_name, username):
+    """
+    Removes a user from a group.
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM group_members WHERE group_name = ? AND username = ?", (group_name, username))
+        conn.commit()
+        conn.close()
+        print(f"[DB] '{username}' removed from group '{group_name}'")
+
+    except Exception as e:
+        print(f"[DB ERROR] remove_from_group: {e}")
+
+def get_group_members(group_name):
+    """
+    Returns a list of usernames who are members of the given group.
+    Returns an empty list if the group does not exist.
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT username FROM group_members WHERE group_name = ?", (group_name,))
+
+        rows = cursor.fetchall()
+        conn.close()
+        return [row[0] for row in rows]
+    
+    except Exception as e:
+        print(f"[DB ERROR] get_group_members: {e}")
+        return []
+
+def block_user(username, blocked_username):
+    """
+    Blocks a user so they cannot send messages to username.
+    INSERT OR IGNORE prevents errors if the same user is blocked twice.
+    Returns True if successful.
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR IGNORE INTO blocked_users (user_id, blocked_user_id) VALUES (?, ?)", (username, blocked_username))
+        conn.commit()
+        conn.close()
+
+        print(f"[DB] '{username}' blocked '{blocked_username}'")
+        return True
+    
+    except Exception as e:
+        print(f"[DB ERROR] block_user: {e}")
+        return False
+    
+def is_blocked(username, sender_username):
+    """
+    Checks if sender username is blocked by username.
+    The server calls this before routing every message.
+    Returns True if blocked, False if not.
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""SELECT 1 FROM blocked_users WHERE user_id = ? AND blocked_user_id = ?""", (username, sender_username))
+
+        row = cursor.fetchone()
+        conn.close()
+
+        return row is not None
+    
+    except Exception as e:
+        print(f"[DB ERROR] is_blocked: {e}")
+        return False

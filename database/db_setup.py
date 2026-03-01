@@ -1,5 +1,4 @@
-# CSC3002F - Multi-Paradigm Chat Application
-# MUKOVHE - Database table creation
+# Ranwashe Mukovhe - Database table creation
 # This creates the SQLite database file and all the tables 
 # The database is stored as a single file: ChatApp.db
 
@@ -15,7 +14,7 @@ def create_tables():
     """
     Connect to the database and create all the required tables.
     SQLite creates the .db file automatically if it doesn't exist.
-    If NOT EXSISTS it means that running this twice will not cause errors
+    If NOT EXISTS it means that running this twice will not cause errors
     """
 
     # Connect to (or create) the database file
@@ -35,7 +34,7 @@ def create_tables():
     """)
     print("[DB] Table 'users' ready")
 
-    # Stores messages for online delivery (Store-and-forward)
+    # Stores messages for offline delivery (store-and-forward)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS messages (
             message_id  INTEGER PRIMARY KEY AUTOINCREMENT,
