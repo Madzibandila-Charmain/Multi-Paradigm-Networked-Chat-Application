@@ -50,6 +50,4 @@ def send_file(tcp_socket, sender, receiver, filepath):
     with open(filepath, "rb") as f:
         file_data = f.read()
 
-    size = len(file_data)
-
-    
+    size = len(file_data) 
