@@ -361,3 +361,53 @@ def handle_client(client_socket, client_address):
         handle_logout(username)
         client_socket.close()
         print(f"[CLOSED] {username or client_address} connection closed")
+
+def start_server():
+    """
+    Creates the TCP server socket and starts accepting connections.
+    AF_INET = IPv4 addresses, SOCK_STREAM = TCP protocol.
+    SO_REUSEADDR lets us restart the server quickly without the OS
+    blocking the port for a few minutes after shutdown.
+    """
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server_socket.bind((HOST, TCP_PORT))
+    server_socket.listen(MAX_CLIENTS)
+
+    print(f"[SERVER] Listening on {HOST}:{TCP_PORT}")
+    print(f"[SERVER] Waiting for connections... (Ctrl+C to stop)")
+
+    try:
+        while True:
+            # accept() blocks here until someone connects
+            # Returns a new socket just for that client + their address
+            client_socket, client_address = server_socket.accept()
+
+            # Spawn a new thread for this client
+            # target = the function to run in the thread
+            # args   = the arguments to pass to that function
+            # daemon = True means this thread dies when the server stops
+            thread = threading.Thread(
+                target=handle_client,
+                args=(client_socket, client_address),
+                daemon=True
+            )
+            thread.start()
+
+            print(f"[SERVER] Active connections: {threading.active_count() - 1}")
+
+    except KeyboardInterrupt:
+        print("\n[SERVER] Shutting down")
+    finally:
+        server_socket.close()
+
+
+if __name__ == "__main__":
+    from server.udp_relay import start_udp_relay
+
+    # Start UDP relay in background thread alongside TCP server
+    udp_thread = threading.Thread(target=start_udp_relay, daemon=True)
+    udp_thread.start()
+    print("[SERVER] UDP relay started on port 9001")
+
+    start_server()
