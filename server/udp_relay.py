@@ -50,3 +50,57 @@ def forward_status(udp_socket, msg_type, sender, receiver):
     except Exception as e:
         print(f"[UDP RELAY ERROR] Could not forward to {receiver}: {e}")
 
+def start_udp_relay():
+    """
+    Creates a UDP socket, binds to port 9001 and loops waiting for messages.
+
+    The key difference from the TCP server:
+    TCP uses accept() and spawns a thread per client because each client
+    has a persistent connection. UDP has no connection at all - every packet
+    arrives independently with the sender's address attached. One loop
+    handles messages from every client so no threads are needed.
+
+    recvfrom() is the UDP equivalent of recv() - it returns the data AND
+    the sender's address (ip, port) because there is no connection to
+    tell us who sent it.
+    """
+    # SOCK_DGRAM = UDP, compare to SOCK_STREAM which is TCP
+    udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    udp_socket.bind((HOST, UDP_PORT))
+
+    print(f"[UDP RELAY] Listening on {HOST}:{UDP_PORT}")
+
+    while True:
+        try:
+            data, sender_address = udp_socket.recvfrom(BUFFER_SIZE)
+            raw_message = data.decode("utf-8")
+            parsed = parse_udp_message(raw_message)
+
+            if parsed is None:
+                print(f"[UDP RELAY] Malformed message from {sender_address}, dropped")
+                continue
+
+            msg_type = parsed.get(FIELD_TYPE)
+            sender   = parsed.get(FIELD_FROM)
+            receiver = parsed.get(FIELD_TO)
+
+            if not msg_type or not sender or not receiver:
+                print(f"[UDP RELAY] Incomplete message from {sender_address}, dropped")
+                continue
+
+            if msg_type not in UDP_MESSAGE_TYPES:
+                print(f"[UDP RELAY] Unexpected message type {msg_type}, dropped")
+                continue
+
+            print(f"[UDP RELAY] Received {msg_type} from {sender} for {receiver}")
+            forward_status(udp_socket, msg_type, sender, receiver)
+
+        except Exception as e:
+            # Print the error and keep going - never let one bad message stop the relay
+            print(f"[UDP RELAY ERROR] {e}")
+            continue
+
+
+if __name__ == "__main__":
+    start_udp_relay()
