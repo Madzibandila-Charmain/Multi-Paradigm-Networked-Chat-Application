@@ -23,8 +23,7 @@ from utils.message import build_tcp_message, parse_tcp_header, build_udp_message
 from database.db_manager import (verify_user, set_user_status, save_message, get_offline_messages, mark_delivered, get_group_members, is_blocked)
 
 # Shared states 
-# The lock is needed because multiple threads run at the same time
-# and they all share this dictionary. Without the lock two threads
+# The lock is needed because multiple threads run at the same time and they all share this dictionary. Without the lock two threads
 # could write to it at the same time and corrupt it.
 # This is the same idea as "synchronized" in Java.
 
@@ -100,6 +99,50 @@ def send_file(sock, msg_type, sender, receiver, file_data):
         )
         sock.sendall(header.encode("utf-8") + file_data)
         return True
+    
     except Exception as e:
         print(f"[ERROR] Failed to send file to {receiver}: {e}")
         return False
+    
+# Receive helper  function
+def receive_full_message(sock):
+    """
+    Reads a complete message from a socket one chunck at a time
+    Keeps reading until the full header and body have arrived
+    Returns (header_dict, boudy_bytes) or (None, None) if connection dropped.
+    """
+    try:
+        raw = b""  # b"" means empt bytes
+        separator = HEADER_BODY_SEPARATOR.encode("utf-8")
+
+        # Keep reading chunkcs until we have the complete header
+        while separator not in raw:
+            chunk = sock.recv(BUFFER_SIZE)
+            if not chunk:
+                # Empty chunk means client disconnected
+                return None, None
+            raw += chunk
+
+        # Split at the separator- header on the left and start of body on the right
+        header_bytes, leftover =  raw.split(separator, 1)
+        header = parse_tcp_header(header_bytes.decode("uft-8"))
+
+        if header is None:
+            return None, None
+        
+        # Read the body base on the size field in the header
+        body_size = int(header.get(FIELD_SIZE, 0))
+        body = leftover
+
+        # Keep reading until we have all the body bytes
+        while len(body) < body_size:
+            chunk = sock.recv(BUFFER_SIZE)
+            if not chunk:
+                break
+            body += chunk
+
+        return header, body[:body_size]
+
+    except Exception as e:
+        print(f"[ERROR] receive_full_message: {e}")
+        return None, None
