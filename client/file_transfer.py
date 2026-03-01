@@ -10,7 +10,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from constants import (
     MEDIA_DIR, IMAGE, VIDEO_FILE, AUDIO_FILE, DOCUMENT,
     FIELD_TYPE, FIELD_FROM, FIELD_TO, FIELD_SIZE,
-    HEADER_BODY_SEPARATOR
+    HEADER_BODY_SEPARATOR, HEADER_FIELD_SEPARATOR, FIELD_TIMESTAMP
 )
 from utils.message import get_timestamp
 
@@ -51,3 +51,22 @@ def send_file(tcp_socket, sender, receiver, filepath):
         file_data = f.read()
 
     size = len(file_data) 
+
+    #Builds header manually for binary safety
+    header = (
+        f"{FIELD_TYPE}: {msg_type}{HEADER_FIELD_SEPARATOR}"
+        f"{FIELD_FROM}: {sender}{HEADER_FIELD_SEPARATOR}"
+        f"{FIELD_TO}: {receiver}{HEADER_FIELD_SEPARATOR}"
+        f"{FIELD_TIMESTAMP}: {get_timestamp()}{HEADER_FIELD_SEPARATOR}"
+        f"{FIELD_SIZE}: {size}"
+    )
+
+    message = header + HEADER_BODY_SEPARATOR
+    
+    # Send header first
+    tcp_socket.sendall(message.encode())
+
+    # Then send binary body
+    tcp_socket.sendall(file_data)
+
+    print(f"[FILE SENT] {os.path.basename(filepath)} ({size} bytes)")
