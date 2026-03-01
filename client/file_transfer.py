@@ -62,7 +62,7 @@ def send_file(tcp_socket, sender, receiver, filepath):
     )
 
     message = header + HEADER_BODY_SEPARATOR
-    
+
     # Send header first
     tcp_socket.sendall(message.encode())
 
@@ -70,3 +70,31 @@ def send_file(tcp_socket, sender, receiver, filepath):
     tcp_socket.sendall(file_data)
 
     print(f"[FILE SENT] {os.path.basename(filepath)} ({size} bytes)")
+
+#Receives the file
+def receive_file(tcp_socket, header_fields):
+
+    filename = f"{header_fields['TYPE']}_{header_fields['TIMESTAMP']}"
+    size = int(header_fields[FIELD_SIZE])
+
+    os.makedirs(MEDIA_DIR, exist_ok=True) #Ensures the directory exists
+
+    filepath = os.path.join(MEDIA_DIR, filename)
+
+    received_bytes = b""
+    remainder = size
+
+    while remainder > 0:
+        chunk = tcp_socket.recv(min(4096, remainder))
+
+        if not chunk:
+            break
+        received_bytes += chunk
+        remainder -= len(chunk)
+
+    with open(filepath, "wb") as f:
+        f.write(received_bytes)
+
+    print(f"[FILE RECEIVED] Saved to {filepath}")
+
+
