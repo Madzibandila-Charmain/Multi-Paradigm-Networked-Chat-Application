@@ -270,13 +270,94 @@ def signal_p2p(sender, receiver, sender_socket, receiver_socket):
         sender_ip   = sender_socket.getpeername()[0]
         receiver_ip = receiver_socket.getpeername()[0]
 
-        send_message(sender_socket, "P2P_SIGNAL", "server", sender,
-                     f"peer_ip: {receiver_ip}\npeer_username: {receiver}")
+        send_message(sender_socket, "P2P_SIGNAL", "server", sender, f"peer_ip: {receiver_ip}\npeer_username: {receiver}")
 
-        send_message(receiver_socket, "P2P_SIGNAL", "server", receiver,
-                     f"peer_ip: {sender_ip}\npeer_username: {sender}")
+        send_message(receiver_socket, "P2P_SIGNAL", "server", receiver, f"peer_ip: {sender_ip}\npeer_username: {sender}")
 
         print(f"[P2P] Signalled {sender} and {receiver} for direct transfer")
 
     except Exception as e:
         print(f"[ERROR] P2P signalling failed: {e}")
+
+# Client Handler 
+def handle_client(client_socket, client_address):
+    """
+    The main loop for one connected client.
+    Reads messages one at a time and handles each based on its TYPE field.
+    The finally block runs no matter how the loop ends - clean disconnect
+    or unexpected crash - so cleanup always happens.
+    """
+    print(f"[CONNECT] New connection from {client_address}")
+    username = None
+    
+    try:
+        while True:
+            header, body = receive_full_message(client_socket)
+
+            # None means the connection dropped
+            if header is None:
+                print(f"[DISCONNECT] {username or client_address} lost connection")
+                break
+
+            msg_type = header.get(FIELD_TYPE)
+            print(f"[RECV] {msg_type} from {header.get(FIELD_FROM, '?')}")
+
+            if msg_type == LOGIN:
+                username = handle_login(client_socket, header, body)
+                if username is None:
+                    break  # Login failed - close connection
+
+            elif msg_type == LOGOUT:
+                send_message(client_socket, ACK, "server", username, "Logged out")
+                break  # Clean exit
+
+            elif msg_type in [TEXT, IMAGE, VIDEO_FILE, AUDIO_FILE, DOCUMENT]:
+                receiver = header.get(FIELD_TO)
+                if msg_type != TEXT and is_online(receiver):
+                    # File transfer and recipient is online - use P2P
+                    receiver_socket = get_online_client_socket(receiver)
+                    signal_p2p(username, receiver, client_socket, receiver_socket)
+                else:
+                    # Text message or recipient offline - route through server
+                    route_message(header, body, client_socket)
+
+            elif msg_type == BLOCK_USER:
+                target = header.get(FIELD_TO)
+                block_user(username, target)
+                send_message(client_socket, ACK, "server", username, f"{target} has been blocked")
+                print(f"[BLOCK] {username} blocked {target}")
+
+            elif msg_type == CREATE_GROUP:
+                group_name = body.decode("utf-8").strip() if body else ""
+                create_group(group_name, username)
+                send_message(client_socket, ACK, "server", username, f"Group {group_name} created")
+                print(f"[GROUP] {username} created group '{group_name}'")
+
+            elif msg_type == JOIN_GROUP:
+                group_name = body.decode("utf-8").strip() if body else ""
+                add_to_group(group_name, username)
+                send_message(client_socket, ACK, "server", username, f"Joined group {group_name}")
+
+            elif msg_type == ADD_USER:
+                send_message(client_socket, ACK, "server", username, "User added")
+
+            elif msg_type == REMOVE_USER:
+                send_message(client_socket, ACK, "server", username, "User removed")
+
+            elif msg_type == EXIT_GROUP:
+                group_name = body.decode("utf-8").strip() if body else ""
+                remove_from_group(group_name, username)
+                send_message(client_socket, ACK, "server", username, f"Left group {group_name}")
+
+            else:
+                print(f"[WARN] Unknown message type: {msg_type}")
+                send_message(client_socket, ERROR, "server", username or "unknown", f"Unknown message type: {msg_type}")
+
+    except Exception as e:
+        print(f"[ERROR] handle_client crashed for {username}: {e}")
+
+    finally:
+        # This always runs whether we exited cleanly or crashed
+        handle_logout(username)
+        client_socket.close()
+        print(f"[CLOSED] {username or client_address} connection closed")
