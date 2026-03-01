@@ -104,7 +104,6 @@ def send_file(sock, msg_type, sender, receiver, file_data):
         print(f"[ERROR] Failed to send file to {receiver}: {e}")
         return False
     
-# Receive helper  function
 def receive_full_message(sock):
     """
     Reads a complete message from a socket one chunck at a time
@@ -146,3 +145,39 @@ def receive_full_message(sock):
     except Exception as e:
         print(f"[ERROR] receive_full_message: {e}")
         return None, None
+    
+def handle_login(client_socket, header, body):
+    """
+    Handles a LOGIN message from a client.
+    Extracts the username from the header and password from the body.
+    Adds the client to online_clients if login is successful.
+    Returns the username on success, None on failure.
+    """
+    username = header.get(FIELD_FROM)
+    password = body.decode("utf-8").replace("password: ", "").strip() if body else ""
+
+    if not username or not password:
+        send_message(client_socket, ERROR, "server", "unknown", "Missing username or password")
+        return None
+    
+    # Verify that the user is in the database
+    if not verify_user(username, password):
+        send_message(client_socket, ERROR, "server", "username", "Invalid credentials")
+        return None
+    
+    # Successful
+    print(f"[LOGIN] {username} logged in")
+
+    # Add to online dictionary so other client can reach them
+    add_online_client(username, client_socket)
+
+    # Notify all that the user is online
+    broadcast_status(username, USER_ONLINE)
+
+    # Send confimation back to the client
+    send_message(client_socket, ACK, "server", username, "Login successful")
+
+    # Deilver offline messages
+    deliver_offline_messages(username, client_socket)
+
+    return username
