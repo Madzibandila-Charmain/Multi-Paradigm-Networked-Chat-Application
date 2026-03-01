@@ -30,6 +30,7 @@ class ClientHandler:
         self.username = None
         self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.keep_running = True
 
     #Connects to the server using TCP
     def connect(self):
@@ -48,10 +49,44 @@ class ClientHandler:
         self.username = username
         msg = build_tcp_message(LOGIN, username, "SERVER")
         self.tcp_socket.sendall(msg.encode())
+
+    #Logs out a user
+    def logout(self):
+        msg = build_tcp_message(LOGOUT, self.username, "SERVER")
+        self.tcp_socket.sendall(msg.encode())
+        self.keep_running = False
+
+    #File transfer
+    def send_file(self, receiver, filepath):
+        send_file(self.tcp_socket, self.username, receiver, filepath)
     
     #Sends a message
     def send_text(self, receiver, text):
         msg = build_tcp_message(TEXT, self.username, receiver, text)
+        self.tcp_socket.sendall(msg.encode())
+
+    def create_group(self, group_name):
+        msg = build_tcp_message(CREATE_GROUP, self.username, group_name)
+        self.tcp_socket.sendall(msg.encode())
+
+    def join_group(self, group_name):
+        msg = build_tcp_message(JOIN_GROUP, self.username, group_name)
+        self.tcp_socket.sendall(msg.encode())
+
+    def add_user(self, group_name, user_to_add):
+        msg = build_tcp_message(ADD_USER, self.username, group_name, user_to_add)
+        self.tcp_socket.sendall(msg.encode())
+
+    def remove_user(self, group_name, user_to_remove):
+        msg = build_tcp_message(REMOVE_USER, self.username, group_name, user_to_remove)
+        self.tcp_socket.sendall(msg.encode())
+
+    def exit_group(self, group_name):
+        msg = build_tcp_message(EXIT_GROUP, self.username, group_name)
+        self.tcp_socket.sendall(msg.encode())
+
+    def block_user(self, target_user):
+        msg = build_tcp_message(BLOCK_USER, self.username, target_user)
         self.tcp_socket.sendall(msg.encode())
 
     #Receives a message
@@ -122,4 +157,20 @@ class ClientHandler:
     def send_typing(self, receiver):
         msg = build_udp_message(TYPING, self.username, receiver)
         self.udp_socket.sendto(msg.encode(), (HOST, UDP_PORT))
+
+    def receive_udp(self):
+        while self.keep_running:
+            try:
+                data, _ = self.udp_socket.recvfrom(BUFFER_SIZE)
+                parsed = parse_udp_message(data.decode())
+                if parsed:
+                    print(f"\n[{parsed['TYPE']}] from {parsed['FROM']}")
+            except:
+                break
+
+    def udp_thread(self):
+        thread = threading.Thread(target=self.receive_udp)
+        thread.daemon = True
+        thread.start()
+
     
