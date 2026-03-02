@@ -33,6 +33,8 @@ class ClientHandler:
         self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.keep_running = True
 
+        self.udp_socket.bind(("0.0.0.0", 0))
+
         #P2P sever socket(for direct file transferes)
         self.p2p_server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.p2p_server_socket.bind(("0.0.0.0", 0))
@@ -134,6 +136,12 @@ class ClientHandler:
                         buffer = buffer[size:]
 
                         receive_file(parsed, file_bytes)
+
+                    elif msg_type == "P2P_SIGNAL":
+                        peer_ip = body.split("\n")[0].split(": ")[1]
+                        peer_username = body.split("\n")[1].split(": ")[1]
+
+                        print(f"[P2P] Connect directly to {peer_username} at {peer_ip}")
                     else:
                         size = int(parsed.get(FIELD_SIZE, 0))
                         body_bytes = buffer[:size]
