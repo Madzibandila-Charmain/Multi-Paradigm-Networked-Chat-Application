@@ -57,15 +57,16 @@ class ClientHandler:
             print("Please verify server availability.")
     
     #Logs in the user into the ChatApp
-    def login(self, username, password):
+    def login(self, username, password=""):
         self.username = username
-        msg = build_tcp_message(LOGIN, username, "SERVER", f"password: {password}")
+        body = f"password: {password}\np2p_port: {self.p2p_port}"
+        msg = build_tcp_message(LOGIN, username, "server", body)
         self.tcp_socket.sendall(msg.encode())
 
     #Logs out a user
     def logout(self):
         try:
-            msg = build_tcp_message(LOGOUT, self.username, "SERVER")
+            msg = build_tcp_message(LOGOUT, self.username, "server")
             self.tcp_socket.sendall(msg.encode())
         except:
             pass
@@ -299,7 +300,8 @@ if __name__ == "__main__":
     client.connect()
 
     username = input("Enter username: ")
-    client.login(username)
+    password = input("Enter password: ")
+    client.login(username, password)
 
     client.start_threads()
 
