@@ -124,7 +124,16 @@ class ClientHandler:
                     msg_type = parsed[FIELD_TYPE]
 
                     if msg_type in (IMAGE, VIDEO_FILE, AUDIO_FILE, DOCUMENT):
-                        receive_file(self.tcp_socket, parsed)
+                        size = int(parsed.get(FIELD_SIZE, 0))
+
+                        if len(buffer) < size:
+                            buffer = header_part + HEADER_BODY_SEPARATOR.encode() + buffer
+                            break
+
+                        file_bytes = buffer[:size]
+                        buffer = buffer[size:]
+
+                        receive_file(parsed, file_bytes)
                     else:
                         size = int(parsed.get(FIELD_SIZE, 0))
                         body_bytes = buffer[:size]
