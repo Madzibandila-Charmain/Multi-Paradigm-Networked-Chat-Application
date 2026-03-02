@@ -29,10 +29,13 @@ class ClientHandler:
 
     def __init__(self):
         self.username = None
-        self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.keep_running = True
 
+        #TCP Socket
+        self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+        #UDP Socket
+        self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.udp_socket.bind(("0.0.0.0", 0))
 
         #P2P sever socket(for direct file transferes)
@@ -61,8 +64,12 @@ class ClientHandler:
 
     #Logs out a user
     def logout(self):
-        msg = build_tcp_message(LOGOUT, self.username, "SERVER")
-        self.tcp_socket.sendall(msg.encode())
+        try:
+            msg = build_tcp_message(LOGOUT, self.username, "SERVER")
+            self.tcp_socket.sendall(msg.encode())
+        except:
+            pass
+        
         self.keep_running = False
         self.tcp_socket.close()
         self.udp_socket.close()
@@ -90,7 +97,8 @@ class ClientHandler:
         self.tcp_socket.sendall(msg.encode())
 
     def remove_user(self, group_name, user_to_remove):
-        msg = build_tcp_message(REMOVE_USER, self.username, group_name, user_to_remove)
+        body = user_to_remove
+        msg = build_tcp_message(REMOVE_USER, self.username, group_name, body)
         self.tcp_socket.sendall(msg.encode())
 
     def exit_group(self, group_name):
@@ -124,40 +132,38 @@ class ClientHandler:
                         continue
 
                     msg_type = parsed[FIELD_TYPE]
+                    size = int(parsed.get(FIELD_SIZE, 0))
+
+                    if len(buffer) < size:
+                        buffer = header_part + HEADER_BODY_SEPARATOR.encode() + buffer
+                        break
+
+                    body_bytes = buffer[:size]
+                    buffer = buffer[size:]
+                    body = body_bytes.decode(errors="ignore")
 
                     if msg_type in (IMAGE, VIDEO_FILE, AUDIO_FILE, DOCUMENT):
-                        size = int(parsed.get(FIELD_SIZE, 0))
-
-                        if len(buffer) < size:
-                            buffer = header_part + HEADER_BODY_SEPARATOR.encode() + buffer
-                            break
-
-                        file_bytes = buffer[:size]
-                        buffer = buffer[size:]
-
-                        receive_file(parsed, file_bytes)
+                        receive_file(parsed, body_bytes)
 
                     elif msg_type == "P2P_SIGNAL":
-                        peer_ip = body.split("\n")[0].split(": ")[1]
+                        lines = body.split("\n")
+                        peer_ip = lines.split(": ")[1]
                         peer_username = body.split("\n")[1].split(": ")[1]
-
                         print(f"[P2P] Connect directly to {peer_username} at {peer_ip}")
-                    else:
-                        size = int(parsed.get(FIELD_SIZE, 0))
-                        body_bytes = buffer[:size]
-                        buffer = buffer[size:]
-                        body = body_bytes.decode()
 
-                        if msg_type == ACK:
-                            print(f"[ACK] {parsed['FROM']} confirmed receipt.")
-                        elif msg_type == ERROR:
-                            print(f"[ERROR] {parsed['FROM']}: {body}")
-                        elif msg_type == MESSAGE_FAILED:
-                            print(f"[FAILED] Message to {parsed['TO']} could not be delivered.")
-                        else:
-                            print(f"\n┌─[{parsed['FROM']}] @ {parsed['TIMESTAMP']}")
-                            print(f"| {body}")
-                            print("└" + "─" * (len(str(body))+2))
+                    elif msg_type == ACK:
+                        print(f"[ACK] {parsed['FROM']} confirmed receipt.")
+
+                    elif msg_type == ERROR:
+                        print(f"[ERROR] {parsed['FROM']}: {body}")
+
+                    elif msg_type == MESSAGE_FAILED:
+                        print(f"[FAILED] Message to {parsed['TO']} could not be delivered.")
+
+                    else:
+                        print(f"\n┌─[{parsed['FROM']}] @ {parsed['TIMESTAMP']}")
+                        print(f"| {body}")
+                        print("└" + "─" * (len(str(body))+2))
 
             except Exception as e:
                 error_msg = str(e)
@@ -176,17 +182,6 @@ class ClientHandler:
                     print(f"\n[{parsed['TYPE']}] from {parsed['FROM']}")
             except:
                 break
-    
-    #Listens for incoming messages from the server using threading
-    def tcp_thread(self):
-        thread = threading.Thread(target=self.receive_messages)
-        thread.daemon = True      #Ensures the thread stops automatically when the main program exits
-        thread.start()
-
-    def udp_thread(self):
-        thread = threading.Thread(target=self.receive_udp)
-        thread.daemon = True
-        thread.start()
 
     #Status updates using UDP
     def send_typing(self, receiver):
@@ -201,6 +196,17 @@ class ClientHandler:
                 time.sleep(30)  # every 30 seconds
             except:
                 break
+            
+    #Listens for incoming messages from the server using threading
+    def tcp_thread(self):
+        thread = threading.Thread(target=self.receive_messages)
+        thread.daemon = True      #Ensures the thread stops automatically when the main program exits
+        thread.start()
+
+    def udp_thread(self):
+        thread = threading.Thread(target=self.receive_udp)
+        thread.daemon = True
+        thread.start()
 
     def keep_alive_thread(self):
         thread = threading.Thread(target=self.send_keep_alive)
