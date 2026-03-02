@@ -17,13 +17,13 @@ from constants import (
     KEEP_ALIVE, BLOCK_USER, CREATE_GROUP, JOIN_GROUP, ADD_USER,
     REMOVE_USER, EXIT_GROUP,
     FIELD_TYPE, FIELD_FROM, FIELD_TO, FIELD_SIZE,
-    HEADER_BODY_SEPARATOR
+    HEADER_BODY_SEPARATOR,HEADER_FIELD_SEPARATOR, FIELD_TIMESTAMP
 )
 from utils.message import (
     build_tcp_message, parse_tcp_header,
     build_udp_message, parse_udp_message, get_timestamp
 )
-from file_transfer import send_file, receive_file
+from file_transfer import send_file, receive_file, detect_file_type
 
 class ClientHandler:
 
@@ -75,7 +75,7 @@ class ClientHandler:
         self.udp_socket.close()
         self.p2p_server_socket.close()
 
-    #File transfer
+    #File transfer through TCP
     def send_file(self, receiver, filepath):
         send_file(self.tcp_socket, self.username, receiver, filepath)
     
@@ -83,6 +83,45 @@ class ClientHandler:
     def send_text(self, receiver, text):
         msg = build_tcp_message(TEXT, self.username, receiver, text)
         self.tcp_socket.sendall(msg.encode())
+
+    def send_file_p2p(self, peer_ip, peer_port, filepath):
+
+        if not os.path.exists(filepath):
+            print("[ERROR] File does not exist")
+            return
+
+        msg_type = detect_file_type(filepath)
+        if not msg_type:
+            print("[ERROR] Unsupported file")
+            return
+
+        with open(filepath, "rb") as f:
+            file_data = f.read()
+
+        size = len(file_data)
+
+        header = (
+            f"{FIELD_TYPE}: {msg_type}{HEADER_FIELD_SEPARATOR}"
+            f"{FIELD_FROM}: {self.username}{HEADER_FIELD_SEPARATOR}"
+            f"{FIELD_TIMESTAMP}: {get_timestamp()}{HEADER_FIELD_SEPARATOR}"
+            f"{FIELD_SIZE}: {size}"
+        )
+
+        message = header + HEADER_BODY_SEPARATOR
+
+        try:
+            peer_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            peer_socket.connect((peer_ip, int(peer_port)))
+
+            peer_socket.sendall(message.encode())
+            peer_socket.sendall(file_data)
+
+            peer_socket.close()
+
+            print("[P2P FILE SENT SUCCESSFULLY]")
+
+        except Exception as e:
+            print(f"[P2P ERROR] {e}")
 
     def create_group(self, group_name):
         msg = build_tcp_message(CREATE_GROUP, self.username, group_name)
@@ -113,7 +152,7 @@ class ClientHandler:
     def receive_messages(self):
         buffer = b""
 
-        while True:
+        while self.keep_running:
             try:
                 data = self.tcp_socket.recv(BUFFER_SIZE)
 
@@ -147,9 +186,11 @@ class ClientHandler:
 
                     elif msg_type == "P2P_SIGNAL":
                         lines = body.split("\n")
-                        peer_ip = lines.split(": ")[1]
-                        peer_username = body.split("\n")[1].split(": ")[1]
-                        print(f"[P2P] Connect directly to {peer_username} at {peer_ip}")
+                        peer_ip = lines[0].split(": ")[1]
+                        peer_port = lines[1].split(": ")[1]
+                        filepath = lines[2].split(": ")[1]
+                        print(f"[P2P] Connect directly to {peer_port} at {peer_ip}")
+                        self.send_file_p2p(peer_ip, peer_port, filepath)
 
                     elif msg_type == ACK:
                         print(f"[ACK] {parsed['FROM']} confirmed receipt.")
@@ -170,6 +211,33 @@ class ClientHandler:
                 print(f"\n┌─[ERROR] NETWORK EXCEPTION")
                 print(f"│ {error_msg}")
                 print("└" + "─"*len(error_msg) + "\n")
+                break
+            
+    def p2p_thread(self):
+
+        while self.keep_running:
+            try:
+                conn, addr = self.p2p_server_socket.accept()
+
+                header_data = b""
+                while HEADER_BODY_SEPARATOR.encode() not in header_data:
+                    header_data += conn.recv(1)
+
+                header_part = header_data.split(
+                    HEADER_BODY_SEPARATOR.encode()
+                )[0]
+
+                parsed = parse_tcp_header(header_part.decode())
+                size = int(parsed.get(FIELD_SIZE, 0))
+
+                file_bytes = b""
+                while len(file_bytes) < size:
+                    file_bytes += conn.recv(BUFFER_SIZE)
+
+                receive_file(parsed, file_bytes)
+                conn.close()
+
+            except:
                 break
 
     def receive_udp(self):
@@ -213,4 +281,35 @@ class ClientHandler:
         thread.daemon = True
         thread.start()
 
-    
+    def start_p2p_thread(self):
+        thread = threading.Thread(target=self.p2p_thread)
+        thread.daemon = True
+        thread.start()
+
+    def start_threads(self):
+        self.tcp_thread()
+        self.udp_thread()
+        self.keep_alive_thread()
+        self.start_p2p_thread()
+
+
+if __name__ == "__main__":
+
+    client = ClientHandler()
+    client.connect()
+
+    username = input("Enter username: ")
+    client.login(username)
+
+    client.start_threads()
+
+    while True:
+        command = input(">> ")
+
+        if command.startswith("/msg"):
+            _, receiver, *message = command.split()
+            client.send_text(receiver, " ".join(message))
+
+        elif command.startswith("/exit"):
+            client.logout()
+            break 
