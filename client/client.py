@@ -33,6 +33,12 @@ class ClientHandler:
         self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.keep_running = True
 
+        #P2P sever socket(for direct file transferes)
+        self.p2p_server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.p2p_server_socket.bind(("0.0.0.0", 0))
+        self.p2p_server_socket.listen(5)
+        self.p2p_port = self.p2p_server_socket.getsockname()[1]
+
     #Connects to the server using TCP
     def connect(self):
         try:
@@ -58,6 +64,7 @@ class ClientHandler:
         self.keep_running = False
         self.tcp_socket.close()
         self.udp_socket.close()
+        self.p2p_server_socket.close()
 
     #File transfer
     def send_file(self, receiver, filepath):
