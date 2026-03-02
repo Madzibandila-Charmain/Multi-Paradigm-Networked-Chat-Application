@@ -46,9 +46,9 @@ class ClientHandler:
             print("Please verify server availability.")
     
     #Logs in the user into the ChatApp
-    def login(self, username):
+    def login(self, username, password):
         self.username = username
-        msg = build_tcp_message(LOGIN, username, "SERVER")
+        msg = build_tcp_message(LOGIN, username, "SERVER", f"password: {password}")
         self.tcp_socket.sendall(msg.encode())
 
     #Logs out a user
