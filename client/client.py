@@ -6,6 +6,7 @@ import socket
 import threading
 import os
 import sys
+import time
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -171,8 +172,8 @@ class ClientHandler:
     def send_keep_alive(self):
         while self.keep_running:
             try:
-                msg = build_tcp_message(KEEP_ALIVE, self.username, "SERVER")
-                self.tcp_socket.sendall(msg.encode())
+                msg = build_udp_message(KEEP_ALIVE, self.username, "SERVER")
+                self.udp_socket.sendto(msg.encode(), (HOST, UDP_PORT))
                 time.sleep(30)  # every 30 seconds
             except:
                 break
