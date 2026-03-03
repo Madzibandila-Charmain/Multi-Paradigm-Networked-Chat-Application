@@ -23,7 +23,7 @@ from utils.message import (
     build_tcp_message, parse_tcp_header,
     build_udp_message, parse_udp_message, get_timestamp
 )
-from file_transfer import send_file, receive_file, detect_file_type
+from client.file_transfer import send_file, receive_file, detect_file_type
 
 class ClientHandler:
 
@@ -59,7 +59,7 @@ class ClientHandler:
     #Logs in the user into the ChatApp
     def login(self, username, password=""):
         self.username = username
-        body = f"password: {password}\np2p_port: {self.p2p_port}"
+        body = f"password: {password}"
         msg = build_tcp_message(LOGIN, username, "server", body)
         self.tcp_socket.sendall(msg.encode())
 
@@ -72,6 +72,7 @@ class ClientHandler:
             pass
         
         self.keep_running = False
+        time.sleep(0.5)
         self.tcp_socket.close()
         self.udp_socket.close()
         self.p2p_server_socket.close()
@@ -188,10 +189,12 @@ class ClientHandler:
                     elif msg_type == "P2P_SIGNAL":
                         lines = body.split("\n")
                         peer_ip = lines[0].split(": ")[1]
-                        peer_port = lines[1].split(": ")[1]
-                        filepath = lines[2].split(": ")[1]
-                        print(f"[P2P] Connect directly to {peer_port} at {peer_ip}")
-                        self.send_file_p2p(peer_ip, peer_port, filepath)
+                        peer_username = lines[1].split(": ")[1]
+                        print(f"[P2P] Direct connection ready with {peer_username} at {peer_ip}")
+                        #peer_port = lines[1].split(": ")[1]
+                        #filepath = lines[2].split(": ")[1]
+                        #print(f"[P2P] Connect directly to {peer_port} at {peer_ip}")
+                        #self.send_file_p2p(peer_ip, peer_port, filepath)
 
                     elif msg_type == ACK:
                         print(f"[ACK] {parsed['FROM']} confirmed receipt.")
