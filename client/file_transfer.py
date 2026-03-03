@@ -83,5 +83,3 @@ def receive_file(header_fields, file_bytes):
         f.write(file_bytes)
 
     print(f"[FILE RECEIVED] Saved to {filepath}")
-
-
