@@ -23,7 +23,7 @@ from utils.message import (
     build_tcp_message, parse_tcp_header,
     build_udp_message, parse_udp_message, get_timestamp
 )
-from file_transfer import send_file, receive_file, detect_file_type
+from .file_transfer import send_file, receive_file, detect_file_type
 
 class ClientHandler:
 
