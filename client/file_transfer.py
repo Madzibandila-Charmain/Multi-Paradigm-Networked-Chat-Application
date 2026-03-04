@@ -50,7 +50,8 @@ def send_file(tcp_socket, sender, receiver, filepath):
     with open(filepath, "rb") as f:
         file_data = f.read()
 
-    size = len(file_data) 
+    size = len(file_data)
+    filename = os.path.basename(filepath)
 
     #Builds header manually for binary safety
     header = (
@@ -58,7 +59,8 @@ def send_file(tcp_socket, sender, receiver, filepath):
         f"{FIELD_FROM}: {sender}{HEADER_FIELD_SEPARATOR}"
         f"{FIELD_TO}: {receiver}{HEADER_FIELD_SEPARATOR}"
         f"{FIELD_TIMESTAMP}: {get_timestamp()}{HEADER_FIELD_SEPARATOR}"
-        f"{FIELD_SIZE}: {size}"
+        f"{FIELD_SIZE}: {size}{HEADER_FIELD_SEPARATOR}"
+        f"FILENAME: {filename}"
     )
 
     message = header + HEADER_BODY_SEPARATOR
@@ -74,9 +76,22 @@ def send_file(tcp_socket, sender, receiver, filepath):
 #Receives the file
 def receive_file(header_fields, file_bytes):
 
-    # Sanitize timestamp for Windows - replace colons with hyphens
-    timestamp = header_fields['TIMESTAMP'].replace(':', '-')
-    filename = f"{header_fields['TYPE']}_{timestamp}"
+    # Use original filename if available, otherwise create one with timestamp
+    if 'FILENAME' in header_fields:
+        filename = header_fields['FILENAME']
+    else:
+        # Fallback: use timestamp + default extension
+        timestamp = header_fields['TIMESTAMP'].replace(':', '-')
+        msg_type = header_fields['TYPE']
+        # Use first extension from the type sets as default
+        default_ext = {
+            IMAGE: ".png",
+            VIDEO_FILE: ".mp4",
+            AUDIO_FILE: ".mp3",
+            DOCUMENT: ".pdf"
+        }.get(msg_type, ".bin")
+        filename = f"{msg_type}_{timestamp}{default_ext}"
+    
     os.makedirs(MEDIA_DIR, exist_ok=True) #Ensures the directory exists
 
     filepath = os.path.join(MEDIA_DIR, filename)
