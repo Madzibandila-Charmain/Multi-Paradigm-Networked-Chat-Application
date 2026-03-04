@@ -17,7 +17,7 @@ from constants import (
     KEEP_ALIVE, BLOCK_USER, CREATE_GROUP, JOIN_GROUP, ADD_USER,
     REMOVE_USER, EXIT_GROUP,
     FIELD_TYPE, FIELD_FROM, FIELD_TO, FIELD_SIZE,
-    HEADER_BODY_SEPARATOR,HEADER_FIELD_SEPARATOR, FIELD_TIMESTAMP
+    HEADER_BODY_SEPARATOR, HEADER_FIELD_SEPARATOR, FIELD_TIMESTAMP
 )
 from utils.message import (
     build_tcp_message, parse_tcp_header,
@@ -31,126 +31,87 @@ class ClientHandler:
         self.username = None
         self.keep_running = True
 
-        #TCP Socket
+        # TCP Socket
         self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-        #UDP Socket
+        # UDP Socket
         self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.udp_socket.bind(("0.0.0.0", 0))
 
-        #P2P sever socket(for direct file transferes)
+        # P2P server socket for direct file transfers
         self.p2p_server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.p2p_server_socket.bind(("0.0.0.0", 0))
         self.p2p_server_socket.listen(5)
         self.p2p_port = self.p2p_server_socket.getsockname()[1]
 
-    #Connects to the server using TCP
     def connect(self):
         try:
             self.tcp_socket.connect((HOST, TCP_PORT))
-            print("=== SEVER HANDSHAKE COMPLETE ===")
+            print("=== SERVER HANDSHAKE COMPLETE ===")
             print(f"Connected to server at {HOST}:{TCP_PORT}")
-            print("Communication channnel open.")
+            print("Communication channel open.")
         except Exception as e:
             print("=== CONNECTION FAILED ===")
             print("Unable to establish connection to server.")
             print("Please verify server availability.")
-    
-    #Logs in the user into the ChatApp
+
     def login(self, username, password=""):
         self.username = username
         body = f"password: {password}"
         msg = build_tcp_message(LOGIN, username, "server", body)
         self.tcp_socket.sendall(msg.encode())
 
-    #Logs out a user
     def logout(self):
         try:
             msg = build_tcp_message(LOGOUT, self.username, "server")
             self.tcp_socket.sendall(msg.encode())
         except:
             pass
-        
         self.keep_running = False
         time.sleep(0.5)
         self.tcp_socket.close()
         self.udp_socket.close()
         self.p2p_server_socket.close()
+        sys.exit(0)
 
-    #File transfer through TCP
     def send_file(self, receiver, filepath):
         send_file(self.tcp_socket, self.username, receiver, filepath)
-    
-    #Sends a message
+
     def send_text(self, receiver, text):
         msg = build_tcp_message(TEXT, self.username, receiver, text)
         self.tcp_socket.sendall(msg.encode())
 
-    def send_file_p2p(self, peer_ip, peer_port, filepath):
-
-        if not os.path.exists(filepath):
-            print("[ERROR] File does not exist")
-            return
-
-        msg_type = detect_file_type(filepath)
-        if not msg_type:
-            print("[ERROR] Unsupported file")
-            return
-
-        with open(filepath, "rb") as f:
-            file_data = f.read()
-
-        size = len(file_data)
-
-        header = (
-            f"{FIELD_TYPE}: {msg_type}{HEADER_FIELD_SEPARATOR}"
-            f"{FIELD_FROM}: {self.username}{HEADER_FIELD_SEPARATOR}"
-            f"{FIELD_TIMESTAMP}: {get_timestamp()}{HEADER_FIELD_SEPARATOR}"
-            f"{FIELD_SIZE}: {size}"
-        )
-
-        message = header + HEADER_BODY_SEPARATOR
-
-        try:
-            peer_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            peer_socket.connect((peer_ip, int(peer_port)))
-
-            peer_socket.sendall(message.encode())
-            peer_socket.sendall(file_data)
-
-            peer_socket.close()
-
-            print("[P2P FILE SENT SUCCESSFULLY]")
-
-        except Exception as e:
-            print(f"[P2P ERROR] {e}")
+    def send_group_message(self, group_name, text):
+        msg = build_tcp_message("GROUP_MSG", self.username, group_name, text)
+        self.tcp_socket.sendall(msg.encode())
 
     def create_group(self, group_name):
-        msg = build_tcp_message(CREATE_GROUP, self.username, group_name)
+        msg = build_tcp_message(CREATE_GROUP, self.username, "server", group_name)
         self.tcp_socket.sendall(msg.encode())
 
     def join_group(self, group_name):
-        msg = build_tcp_message(JOIN_GROUP, self.username, group_name)
+        msg = build_tcp_message(JOIN_GROUP, self.username, "server", group_name)
         self.tcp_socket.sendall(msg.encode())
 
     def add_user(self, group_name, user_to_add):
-        msg = build_tcp_message(ADD_USER, self.username, group_name, user_to_add)
+        # body format: "group_name:username" so server can extract both
+        body = f"{group_name}:{user_to_add}"
+        msg = build_tcp_message(ADD_USER, self.username, "server", body)
         self.tcp_socket.sendall(msg.encode())
 
     def remove_user(self, group_name, user_to_remove):
-        body = user_to_remove
-        msg = build_tcp_message(REMOVE_USER, self.username, group_name, body)
+        body = f"{group_name}:{user_to_remove}"
+        msg = build_tcp_message(REMOVE_USER, self.username, "server", body)
         self.tcp_socket.sendall(msg.encode())
 
     def exit_group(self, group_name):
-        msg = build_tcp_message(EXIT_GROUP, self.username, group_name)
+        msg = build_tcp_message(EXIT_GROUP, self.username, "server", group_name)
         self.tcp_socket.sendall(msg.encode())
 
     def block_user(self, target_user):
         msg = build_tcp_message(BLOCK_USER, self.username, target_user)
         self.tcp_socket.sendall(msg.encode())
 
-    #Receives a message
     def receive_messages(self):
         buffer = b""
 
@@ -190,35 +151,37 @@ class ClientHandler:
                         lines = body.split("\n")
                         peer_ip = lines[0].split(": ")[1]
                         peer_username = lines[1].split(": ")[1]
-                        print(f"[P2P] Direct connection ready with {peer_username} at {peer_ip}")
-                        #peer_port = lines[1].split(": ")[1]
-                        #filepath = lines[2].split(": ")[1]
-                        #print(f"[P2P] Connect directly to {peer_port} at {peer_ip}")
-                        #self.send_file_p2p(peer_ip, peer_port, filepath)
+                        print(f"\n[P2P] Direct connection ready with {peer_username} at {peer_ip}")
 
                     elif msg_type == ACK:
-                        print(f"[ACK] {parsed['FROM']} confirmed receipt.")
+                        print(f">> [ACK] {body}")
 
                     elif msg_type == ERROR:
-                        print(f"[ERROR] {parsed['FROM']}: {body}")
+                        print(f">> [ERROR] {body}")
 
                     elif msg_type == MESSAGE_FAILED:
-                        print(f"[FAILED] Message to {parsed['TO']} could not be delivered.")
+                        print(f">> [FAILED] {body}")
+
+                    elif msg_type == USER_ONLINE:
+                        print(f"\n[+] {parsed['FROM']} is now online")
+
+                    elif msg_type == USER_OFFLINE:
+                        print(f"\n[-] {parsed['FROM']} has gone offline")
 
                     else:
                         print(f"\n┌─[{parsed['FROM']}] @ {parsed['TIMESTAMP']}")
                         print(f"| {body}")
-                        print("└" + "─" * (len(str(body))+2))
+                        print("└" + "─" * (len(str(body)) + 2))
 
             except Exception as e:
-                error_msg = str(e)
-                print(f"\n┌─[ERROR] NETWORK EXCEPTION")
-                print(f"│ {error_msg}")
-                print("└" + "─"*len(error_msg) + "\n")
+                if self.keep_running:
+                    error_msg = str(e)
+                    print(f"\n┌─[ERROR] NETWORK EXCEPTION")
+                    print(f"│ {error_msg}")
+                    print("└" + "─" * len(error_msg) + "\n")
                 break
-            
-    def p2p_thread(self):
 
+    def p2p_thread(self):
         while self.keep_running:
             try:
                 conn, addr = self.p2p_server_socket.accept()
@@ -227,10 +190,7 @@ class ClientHandler:
                 while HEADER_BODY_SEPARATOR.encode() not in header_data:
                     header_data += conn.recv(1)
 
-                header_part = header_data.split(
-                    HEADER_BODY_SEPARATOR.encode()
-                )[0]
-
+                header_part = header_data.split(HEADER_BODY_SEPARATOR.encode())[0]
                 parsed = parse_tcp_header(header_part.decode())
                 size = int(parsed.get(FIELD_SIZE, 0))
 
@@ -240,7 +200,6 @@ class ClientHandler:
 
                 receive_file(parsed, file_bytes)
                 conn.close()
-
             except:
                 break
 
@@ -249,13 +208,11 @@ class ClientHandler:
             try:
                 data, _ = self.udp_socket.recvfrom(BUFFER_SIZE)
                 parsed = parse_udp_message(data.decode())
-
                 if parsed:
-                    print(f"\n[{parsed['TYPE']}] from {parsed['FROM']}")
+                    print(f"\n[UDP] {parsed['TYPE']} from {parsed['FROM']}")
             except:
                 break
 
-    #Status updates using UDP
     def send_typing(self, receiver):
         msg = build_udp_message(TYPING, self.username, receiver)
         self.udp_socket.sendto(msg.encode(), (HOST, UDP_PORT))
@@ -263,16 +220,15 @@ class ClientHandler:
     def send_keep_alive(self):
         while self.keep_running:
             try:
-                msg = build_udp_message(KEEP_ALIVE, self.username, "SERVER")
+                msg = build_udp_message(KEEP_ALIVE, self.username, "server")
                 self.udp_socket.sendto(msg.encode(), (HOST, UDP_PORT))
-                time.sleep(30)  # every 30 seconds
+                time.sleep(30)
             except:
                 break
-            
-    #Listens for incoming messages from the server using threading
+
     def tcp_thread(self):
         thread = threading.Thread(target=self.receive_messages)
-        thread.daemon = True      #Ensures the thread stops automatically when the main program exits
+        thread.daemon = True
         thread.start()
 
     def udp_thread(self):
@@ -308,13 +264,84 @@ if __name__ == "__main__":
 
     client.start_threads()
 
+    print("\n========================================")
+    print("     Welcome to CSC3002F Chat App       ")
+    print("========================================")
+    print("  /msg <user> <text>          - Send a message")
+    print("  /file <user> <path>         - Send a file")
+    print("  /block <user>               - Block a user")
+    print("  /create <group>             - Create a group")
+    print("  /add <group> <user>         - Add user to group")
+    print("  /gmsg <group> <text>        - Send group message")
+    print("  /join <group>               - Join a group")
+    print("  /leave <group>              - Leave a group")
+    print("  /exit                       - Quit")
+    print("========================================\n")
+
     while True:
         command = input(">> ")
 
+        if not command.strip():
+            continue
+
         if command.startswith("/msg"):
-            _, receiver, *message = command.split()
-            client.send_text(receiver, " ".join(message))
+            parts = command.split(" ", 2)
+            if len(parts) == 3:
+                client.send_text(parts[1], parts[2])
+            else:
+                print("Usage: /msg <username> <text>")
+
+        elif command.startswith("/file"):
+            parts = command.split(" ", 2)
+            if len(parts) == 3:
+                client.send_file(parts[1], parts[2])
+            else:
+                print("Usage: /file <username> <path>")
+
+        elif command.startswith("/block"):
+            parts = command.split()
+            if len(parts) == 2:
+                client.block_user(parts[1])
+            else:
+                print("Usage: /block <username>")
+
+        elif command.startswith("/create"):
+            parts = command.split()
+            if len(parts) == 2:
+                client.create_group(parts[1])
+            else:
+                print("Usage: /create <group_name>")
+
+        elif command.startswith("/add"):
+            parts = command.split()
+            if len(parts) == 3:
+                client.add_user(parts[1], parts[2])
+            else:
+                print("Usage: /add <group_name> <username>")
+
+        elif command.startswith("/gmsg"):
+            parts = command.split(" ", 2)
+            if len(parts) == 3:
+                client.send_group_message(parts[1], parts[2])
+            else:
+                print("Usage: /gmsg <group_name> <text>")
+
+        elif command.startswith("/join"):
+            parts = command.split()
+            if len(parts) == 2:
+                client.join_group(parts[1])
+            else:
+                print("Usage: /join <group_name>")
+
+        elif command.startswith("/leave"):
+            parts = command.split()
+            if len(parts) == 2:
+                client.exit_group(parts[1])
+            else:
+                print("Usage: /leave <group_name>")
 
         elif command.startswith("/exit"):
             client.logout()
-            break 
+
+        else:
+            print("Unknown command. Type /msg, /gmsg, /file, /block, /create, /add, /join, /leave, or /exit")
