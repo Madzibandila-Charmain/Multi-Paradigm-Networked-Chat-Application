@@ -25,7 +25,8 @@ from server.server import online_clients, online_clients_lock
 
 # Only these message types are allowed through the relay
 # Using a set instead of a list because checking membership is faster
-UDP_MESSAGE_TYPES = {TYPING, USER_ONLINE, USER_OFFLINE, KEEP_ALIVE}
+# KEEP_ALIVE is excluded - it's for server monitoring, not client-to-client forwarding
+UDP_MESSAGE_TYPES = {TYPING, USER_ONLINE, USER_OFFLINE}
 
 
 def forward_status(udp_socket, msg_type, sender, receiver):
