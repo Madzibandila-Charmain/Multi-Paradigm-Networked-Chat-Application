@@ -74,7 +74,9 @@ def send_file(tcp_socket, sender, receiver, filepath):
 #Receives the file
 def receive_file(header_fields, file_bytes):
 
-    filename = f"{header_fields['TYPE']}_{header_fields['TIMESTAMP']}"
+    # Sanitize timestamp for Windows - replace colons with hyphens
+    timestamp = header_fields['TIMESTAMP'].replace(':', '-')
+    filename = f"{header_fields['TYPE']}_{timestamp}"
     os.makedirs(MEDIA_DIR, exist_ok=True) #Ensures the directory exists
 
     filepath = os.path.join(MEDIA_DIR, filename)
