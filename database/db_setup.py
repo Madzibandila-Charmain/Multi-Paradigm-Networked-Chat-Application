@@ -134,5 +134,7 @@ if __name__ == "__main__":
     register_user("mukovhe", "password123")
     register_user("charmain", "password123")
     register_user("konke", "password123")
+    register_user("yashil", "password123")
+    register_user("myman", "password123")
     print("\n[DB] Test users registered")
     test_database()
