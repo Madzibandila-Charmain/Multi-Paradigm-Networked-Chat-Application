@@ -6,6 +6,7 @@ import socket
 import threading
 import sys
 import os
+import time
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -124,6 +125,9 @@ def deliver_offline_messages(username, client_socket):
     """
     messages = get_offline_messages(username)
     for msg in messages:
+        if not messages:
+            return
+        time.sleep(0.1) # Waits for the login ACK to arrive and to be processed first 
         send_message(client_socket, msg["msg_type"], msg["sender"], username, msg["content"])
         mark_delivered(msg["message_id"])
 
@@ -212,7 +216,8 @@ def route_message(header, body, sender_socket):
         else:
             send_message(sender_socket, MESSAGE_FAILED, "server", sender, f"Could not deliver to {receiver}")
     else:
-        save_message(sender, receiver, msg_type, body, get_timestamp())
+        body_text = body.decode("utf-8") if body else ""
+        save_message(sender, receiver, msg_type, body_text, get_timestamp())
         print(f"[STORE] {receiver} offline. Message from {sender} stored")
         send_message(sender_socket, ACK, "server", sender, f"{receiver} is offline. Message stored.")
 
@@ -238,6 +243,9 @@ def route_group_message(header, body, sender_socket):
     for member in members:
         if member == sender:
             continue
+        # check if member is blocked by sender
+        if is_blocked(member, sender):
+            continue # skip sliently, dont deliver to this member
         sock = get_online_client_socket(member)
         if sock:
             send_message(sock, TEXT, sender, member, f"[{group_name}] {body_text}")
