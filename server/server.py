@@ -2,7 +2,7 @@
 # This file is the heart of the chat application. It manages all connected clients, routes messages between them,
 # handles login and logout, and coordinates with the database.
 
-import socket 
+import socket
 import threading
 import sys
 import os
@@ -15,10 +15,11 @@ from constants import (
     LOGIN, LOGOUT, TEXT, IMAGE, VIDEO_FILE, AUDIO_FILE, DOCUMENT,
     ACK, ERROR, USER_ONLINE, USER_OFFLINE, MESSAGE_FAILED,
     CREATE_GROUP, JOIN_GROUP, ADD_USER, REMOVE_USER, EXIT_GROUP, BLOCK_USER,
+    P2P_REGISTER, P2P_REQUEST, P2P_SIGNAL, P2P_INCOMING, P2P_DENIED,
     FIELD_TYPE, FIELD_FROM, FIELD_TO, FIELD_SIZE,
     HEADER_BODY_SEPARATOR
 )
-from utils.message import build_tcp_message, parse_tcp_header, build_udp_message, get_timestamp
+from utils.message import build_tcp_message, parse_tcp_header, get_timestamp
 
 from database.db_manager import (
     verify_user, set_user_status, save_message,
@@ -30,11 +31,17 @@ from database.db_manager import (
 online_clients = {}
 online_clients_lock = threading.Lock()
 
-def add_online_client(username, client_socket):
+# Maps username -> (ip, p2p_port) registered after login
+p2p_info      = {}
+p2p_info_lock = threading.Lock()
+
+def add_online_client(username, sock):
+    """Add a successfully logged-in client to the online registry."""
     with online_clients_lock:
-        online_clients[username] = client_socket
+        online_clients[username] = sock
 
 def remove_online_client(username):
+    """Remove a client on logout or disconnect. Safe to call if never registered."""
     with online_clients_lock:
         if username in online_clients:
             del online_clients[username]
@@ -44,8 +51,33 @@ def get_online_client_socket(username):
         return online_clients.get(username, None)
 
 def is_online(username):
+    """
+    Return True if the user has an active connection.
+    Checks the live dict rather than the DB - the DB status can lag if a
+    client drops without sending LOGOUT.
+    """
     with online_clients_lock:
         return username in online_clients
+    
+#p2p_info helpers
+def register_p2p(username, ip, port):
+    """
+    Store the IP and P2P listen port for a client after login.
+    IP is taken from the TCP connection, not the message body, to prevent
+    a client from registering a spoofed address.
+    """
+    with p2p_info_lock:
+        p2p_info[username] = (ip, port)
+
+def remove_p2p(username):
+    """Remove P2P registration on logout. After this, P2P requests to this user get P2P_DENIED."""
+    with p2p_info_lock:
+        p2p_info.pop(username, None)
+
+def get_p2p_info(username):
+    """Return (ip, port) for a user's P2P listen socket, or None if not registered."""
+    with p2p_info_lock:
+        return p2p_info.get(username)
 
 def send_message(sock, msg_type, sender, receiver, body=""):
     """
@@ -53,14 +85,13 @@ def send_message(sock, msg_type, sender, receiver, body=""):
     Returns True if sent successfully, False otherwise.
     """
     try:
-        message = build_tcp_message(msg_type, sender, receiver, body)
-        sock.sendall(message.encode("utf-8"))
+        sock.sendall((build_tcp_message(msg_type, sender, receiver, body)).encode("utf-8"))
         return True
     except Exception as e:
         print(f"[ERROR] Failed to send {msg_type} to {receiver}: {e}")
         return False
 
-def send_file(sock, msg_type, sender, receiver, file_data):
+def send_file(sock, msg_type, sender, receiver, filename, file_data):
     """
     Sends a binary file over TCP.
     Files are raw bytes so we build the header as text, encode it,
@@ -73,6 +104,7 @@ def send_file(sock, msg_type, sender, receiver, file_data):
             f"FROM: {sender}\r\n"
             f"TO: {receiver}\r\n"
             f"TIMESTAMP: {get_timestamp()}\r\n"
+            f"FILENAME: {filename}\r\n"
             f"SIZE: {size}"
             f"{HEADER_BODY_SEPARATOR}"
         )
@@ -82,41 +114,43 @@ def send_file(sock, msg_type, sender, receiver, file_data):
         print(f"[ERROR] Failed to send file to {receiver}: {e}")
         return False
 
-def receive_full_message(sock):
+def receive_full_message(sock, buf):
     """
     Reads a complete message from a socket one chunk at a time.
     Returns (header_dict, body_bytes) or (None, None) if connection dropped.
     """
-    try:
-        raw = b""
-        separator = HEADER_BODY_SEPARATOR.encode("utf-8")
+    sep = HEADER_BODY_SEPARATOR.encode("utf-8")
 
-        while separator not in raw:
+    while True:
+        if sep in buf:
+            break
+        try:
             chunk = sock.recv(BUFFER_SIZE)
-            if not chunk:
-                return None, None
-            raw += chunk
+        except Exception:
+            return None, None, buf
+        if not chunk:
+            return None, None, buf
+        buf += chunk
 
-        header_bytes, leftover = raw.split(separator, 1)
-        header = parse_tcp_header(header_bytes.decode("utf-8"))
+    header_bytes, rest = buf.split(sep, 1)
+    header = parse_tcp_header(header_bytes.decode("utf-8"))
+    if header is None:
+        return None, None, bytearray()
 
-        if header is None:
-            return None, None
+    body_size = int(header.get(FIELD_SIZE, 0))
 
-        body_size = int(header.get(FIELD_SIZE, 0))
-        body = leftover
-
-        while len(body) < body_size:
+    while len(rest) < body_size:
+        try:
             chunk = sock.recv(BUFFER_SIZE)
-            if not chunk:
-                break
-            body += chunk
+        except Exception:
+            return None, None, buf
+        if not chunk:
+            break
+        rest += chunk
 
-        return header, body[:body_size]
-
-    except Exception as e:
-        print(f"[ERROR] receive_full_message: {e}")
-        return None, None
+    body    = bytes(rest[:body_size])
+    new_buf = bytearray(rest[body_size:])  # leftover belongs to the next message
+    return header, body, new_buf
 
 def deliver_offline_messages(username, client_socket):
     """
@@ -124,14 +158,16 @@ def deliver_offline_messages(username, client_socket):
     to the user one by one after login.
     """
     messages = get_offline_messages(username)
+    if not messages:
+        return 
+    time.sleep(0.2)
+
     for msg in messages:
-        if not messages:
-            return
-        time.sleep(0.1) # Waits for the login ACK to arrive and to be processed first 
         send_message(client_socket, msg["msg_type"], msg["sender"], username, msg["content"])
         mark_delivered(msg["message_id"])
+    print(f"[OFFLINE] Delivered {len(messages)} stored messages to {username}")
 
-def handle_login(client_socket, header, body):
+def handle_login(client_socket, client_address, header, body):
     """
     Handles a LOGIN message. Verifies credentials, adds client to
     online_clients, broadcasts status, and delivers offline messages.
@@ -148,11 +184,12 @@ def handle_login(client_socket, header, body):
         send_message(client_socket, ERROR, "server", username, "Invalid credentials")
         return None
 
-    print(f"[LOGIN] {username} logged in")
+    print(f"[LOGIN] {username} logged in from {client_address}")
     add_online_client(username, client_socket)
     broadcast_status(username, USER_ONLINE)
     send_message(client_socket, ACK, "server", username, "Login successful")
-    deliver_offline_messages(username, client_socket)
+    t = threading.Thread(target=deliver_offline_messages, args=(username, client_socket), daemon=True)
+    t.start()
 
     return username
 
@@ -177,8 +214,7 @@ def broadcast_status(username, status_type):
 
     for recipient, sock in recipients.items():
         try:
-            msg = build_tcp_message(status_type, username, recipient, "")
-            sock.sendall(msg.encode("utf-8"))
+            sock.sendall(build_tcp_message(status_type, username, recipient, "").encode("utf-8"))
         except Exception as e:
             print(f"[ERROR] Could not send {status_type} to {recipient}: {e}")
 
@@ -205,10 +241,10 @@ def route_message(header, body, sender_socket):
         is_file = msg_type in [IMAGE, VIDEO_FILE, AUDIO_FILE, DOCUMENT]
 
         if is_file:
-            success = send_file(recipient_socket, msg_type, sender, receiver, body)
+            filename = header.get("FILENAME", f"file_{get_timestamp()}")
+            success = send_file(recipient_socket, msg_type, sender, receiver, filename, body)
         else:
-            body_text = body.decode("utf-8") if body else ""
-            success = send_message(recipient_socket, msg_type, sender, receiver, body_text)
+           success = send_message(recipient_socket, msg_type, sender, receiver, body.decode("utf-8") if body else "")
 
         if success:
             send_message(sender_socket, ACK, "server", sender, f"Message delivered to {receiver}")
@@ -232,8 +268,6 @@ def route_group_message(header, body, sender_socket):
     body_text  = body.decode("utf-8") if body else ""
 
     members = get_group_members(group_name)
-    print(f"[DEBUG] Group '{group_name}' members: {members}")  # add this
-    print(f"[DEBUG] Online clients: {list(online_clients.keys())}")  # add this
 
     if not members:
         send_message(sender_socket, ERROR, "server", sender, f"Group '{group_name}' not found or empty")
@@ -253,8 +287,65 @@ def route_group_message(header, body, sender_socket):
         else:
             save_message(sender, member, TEXT, f"[{group_name}] {body_text}", get_timestamp())
 
-    send_message(sender_socket, ACK, "server", sender, f"Group message sent to {delivered} members")
+    send_message(sender_socket, ACK, "server", sender, f"Group message sent to {delivered} member(s)")
     print(f"[GROUP] {sender} sent message to group '{group_name}'")
+
+
+def handle_p2p_register(username, client_socket, body):
+    """
+    Store the client's P2P listen port after login.
+    The IP comes from the TCP connection, not the message body, to prevent spoofing.
+    """
+    try:
+        p2p_port = int(body.decode("utf-8").strip())
+        ip       = client_socket.getpeername()[0]
+        register_p2p(username, ip, p2p_port)
+        send_message(client_socket, ACK, "server", username, f"P2P registered on {ip}:{p2p_port}")
+        print(f"[P2P] {username} registered at {ip}:{p2p_port}")
+    except Exception as e:
+        send_message(client_socket, ERROR, "server", username, f"P2P registration failed: {e}")
+
+
+def handle_p2p_request(username, client_socket, header, body):
+    """
+    Broker a direct file transfer: exchange addresses and step out.
+    Sends P2P_SIGNAL to the sender with the peer's IP:port.
+    Sends P2P_INCOMING to the receiver so it knows to expect the connection.
+    Sends P2P_DENIED if the peer is offline or has no registered P2P address,
+    so the client falls back to routing through the server.
+
+    Body format: <filename>\n<filepath>\n<filesize>
+    """
+    receiver = header.get(FIELD_TO)
+    try:
+        parts    = body.decode("utf-8").strip().split("\n")
+        filename = parts[0] if len(parts) > 0 else "file"
+        filepath = parts[1] if len(parts) > 1 else ""
+        filesize = parts[2] if len(parts) > 2 else "0"
+    except Exception:
+        filename = filepath = ""; filesize = "0"
+
+    peer_info = get_p2p_info(receiver)
+    peer_sock = get_online_client_socket(receiver)
+
+    if not peer_info or not peer_sock:
+        send_message(client_socket, P2P_DENIED, "server", username,
+                     f"{receiver} is offline or has no P2P address. Use /file to route via server.")
+        return
+
+    peer_ip, peer_port = peer_info
+
+    send_message(client_socket, P2P_SIGNAL, "server", username,
+                 f"IP: {peer_ip}\nPort: {peer_port}\nUsername: {receiver}\n"
+                 f"Filename: {filename}\nFilepath: {filepath}\nFilesize: {filesize}")
+
+    sender_info = get_p2p_info(username)
+    sender_ip   = sender_info[0] if sender_info else client_socket.getpeername()[0]
+    send_message(peer_sock, P2P_INCOMING, "server", receiver,
+                 f"IP: {sender_ip}\nUsername: {username}\nFilename: {filename}\nFilesize: {filesize}")
+
+    print(f"[P2P] Signalled {username} -> {receiver} ({filename})")
+
 
 def handle_client(client_socket, client_address):
     """
@@ -263,11 +354,12 @@ def handle_client(client_socket, client_address):
     The finally block always runs to clean up on exit or crash.
     """
     print(f"[CONNECT] New connection from {client_address}")
+    buf = bytearray()
     username = None
 
     try:
         while True:
-            header, body = receive_full_message(client_socket)
+            header, body, buf = receive_full_message(client_socket, buf)
 
             if header is None:
                 print(f"[DISCONNECT] {username or client_address} lost connection")
@@ -277,13 +369,21 @@ def handle_client(client_socket, client_address):
             print(f"[RECV] {msg_type} from {header.get(FIELD_FROM, '?')}")
 
             if msg_type == LOGIN:
-                username = handle_login(client_socket, header, body)
+                username = handle_login(client_socket, client_address, header, body)
                 if username is None:
                     break
 
             elif msg_type == LOGOUT:
                 send_message(client_socket, ACK, "server", username, "Logged out")
                 break
+
+            elif msg_type == P2P_REGISTER:
+                if username:
+                    handle_p2p_register(username, client_socket, body)
+
+            elif msg_type == P2P_REQUEST:
+                if username:
+                    handle_p2p_request(username, client_socket, header, body)
 
             elif msg_type in [TEXT, IMAGE, VIDEO_FILE, AUDIO_FILE, DOCUMENT]:
                 route_message(header, body, client_socket)
@@ -299,9 +399,11 @@ def handle_client(client_socket, client_address):
 
             elif msg_type == CREATE_GROUP:
                 group_name = body.decode("utf-8").strip() if body else ""
-                create_group(group_name, username)
-                send_message(client_socket, ACK, "server", username, f"Group '{group_name}' created")
-                print(f"[GROUP] {username} created group '{group_name}'")
+                success = create_group(group_name, username)
+                if success:
+                    send_message(client_socket, ACK, "server", username, f"Group '{group_name}' created")
+                else:
+                    send_message(client_socket, ERROR, "server", username, f"Group '{group_name}' already exists")
 
             elif msg_type == JOIN_GROUP:
                 group_name = body.decode("utf-8").strip() if body else ""
@@ -309,7 +411,6 @@ def handle_client(client_socket, client_address):
                 send_message(client_socket, ACK, "server", username, f"Joined group '{group_name}'")
 
             elif msg_type == ADD_USER:
-                # body contains "group_name:username_to_add"
                 body_text = body.decode("utf-8").strip() if body else ""
                 parts = body_text.split(":", 1)
                 if len(parts) == 2:
@@ -325,7 +426,7 @@ def handle_client(client_socket, client_address):
                 body_text = body.decode("utf-8").strip() if body else ""
                 parts = body_text.split(":", 1)
                 if len(parts) == 2:
-                    group_name     = parts[0].strip()
+                    group_name = parts[0].strip()
                     user_to_remove = parts[1].strip()
                     remove_from_group(group_name, user_to_remove)
                     send_message(client_socket, ACK, "server", username, f"{user_to_remove} removed from '{group_name}'")
@@ -347,7 +448,7 @@ def handle_client(client_socket, client_address):
     finally:
         handle_logout(username)
         client_socket.close()
-        print(f"[CLOSED] {username or client_address} connection closed")
+        print(f"[CLOSED] {username or client_address} connection closed.")
 
 def start_server():
     """
@@ -365,11 +466,7 @@ def start_server():
     try:
         while True:
             client_socket, client_address = server_socket.accept()
-            thread = threading.Thread(
-                target=handle_client,
-                args=(client_socket, client_address),
-                daemon=True
-            )
+            thread = threading.Thread(target=handle_client, args=(client_socket, client_address), daemon=True)
             thread.start()
             print(f"[SERVER] Active connections: {threading.active_count() - 1}")
 
