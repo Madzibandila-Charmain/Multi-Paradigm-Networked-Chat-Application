@@ -26,6 +26,13 @@ REMOVE_USER  = "REMOVE_USER"
 EXIT_GROUP   = "EXIT_GROUP"
 BLOCK_USER   = "BLOCK_USER"
 
+# P2P messages (TCP signalling)
+P2P_REGISTER = "P2P_REGISTER"   # Client → Server: register p2p listen port after login
+P2P_REQUEST  = "P2P_REQUEST"    # Client → Server: request direct transfer to peer
+P2P_SIGNAL   = "P2P_SIGNAL"     # Server → Sender: peer's IP:port, connect and send
+P2P_INCOMING = "P2P_INCOMING"   # Server → Receiver: expect incoming direct connection
+P2P_DENIED   = "P2P_DENIED"     # Server → Client: peer offline, fall back to server routing
+
 # Control messages
 ACK            = "ACK"
 ERROR          = "ERROR"
