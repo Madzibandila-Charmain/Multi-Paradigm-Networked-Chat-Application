@@ -43,8 +43,7 @@ def add_online_client(username, sock):
 def remove_online_client(username):
     """Remove a client on logout or disconnect. Safe to call if never registered."""
     with online_clients_lock:
-        if username in online_clients:
-            del online_clients[username]
+        online_clients.pop(username, None)
 
 def get_online_client_socket(username):
     with online_clients_lock:
@@ -148,7 +147,7 @@ def receive_full_message(sock, buf):
             break
         rest += chunk
 
-    body    = bytes(rest[:body_size])
+    body = bytes(rest[:body_size])
     new_buf = bytearray(rest[body_size:])  # leftover belongs to the next message
     return header, body, new_buf
 
@@ -186,6 +185,7 @@ def handle_login(client_socket, client_address, header, body):
 
     print(f"[LOGIN] {username} logged in from {client_address}")
     add_online_client(username, client_socket)
+    set_user_status(username, "online")
     broadcast_status(username, USER_ONLINE)
     send_message(client_socket, ACK, "server", username, "Login successful")
     t = threading.Thread(target=deliver_offline_messages, args=(username, client_socket), daemon=True)
@@ -198,11 +198,13 @@ def handle_logout(username):
     Cleans up when a user disconnects. Removes them from online_clients
     and broadcasts offline status to everyone.
     """
-    if username:
-        remove_online_client(username)
-        broadcast_status(username, USER_OFFLINE)
-        set_user_status(username, "offline")
-        print(f"[LOGOUT] {username} disconnected")
+    if not username:
+        return
+    remove_online_client(username)
+    remove_p2p(username)
+    broadcast_status(username, USER_OFFLINE)
+    set_user_status(username, "offline")
+    print(f"[LOGOUT] {username} disconnected")
 
 def broadcast_status(username, status_type):
     """
@@ -254,8 +256,8 @@ def route_message(header, body, sender_socket):
     else:
         body_text = body.decode("utf-8") if body else ""
         save_message(sender, receiver, msg_type, body_text, get_timestamp())
-        print(f"[STORE] {receiver} offline. Message from {sender} stored")
         send_message(sender_socket, ACK, "server", sender, f"{receiver} is offline. Message stored.")
+        print(f"[STORE] {receiver} offline. Message from {sender} stored")
 
 def route_group_message(header, body, sender_socket):
     """
