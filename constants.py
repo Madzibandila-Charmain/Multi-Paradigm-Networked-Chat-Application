@@ -1,12 +1,24 @@
 # CSC3002F - Multi-Paradigm Chat Application
 # Shared constants - import this file in all modules
 
+import socket
+
+def get_local_ip():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except Exception:
+        return "127.0.0.1"
+    finally:
+        s.close()
+
 # Ports
 TCP_PORT = 9000
 UDP_PORT = 9001
 
 # Server
-HOST = "127.0.0.1"
+HOST = get_local_ip()
 BUFFER_SIZE = 4096
 MAX_CLIENTS = 10
 
