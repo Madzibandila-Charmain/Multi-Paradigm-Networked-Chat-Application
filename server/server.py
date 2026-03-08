@@ -116,7 +116,7 @@ def send_file(sock, msg_type, sender, receiver, filename, file_data):
 def receive_full_message(sock, buf):
     """
     Reads a complete message from a socket one chunk at a time.
-    Returns (header_dict, body_bytes) or (None, None) if connection dropped.
+    Returns (header_dict, body_bytes, buf) or (None, None, buf) if connection dropped.
     """
     sep = HEADER_BODY_SEPARATOR.encode("utf-8")
 
@@ -158,7 +158,7 @@ def deliver_offline_messages(username, client_socket):
     """
     messages = get_offline_messages(username)
     if not messages:
-        return 
+        return
     time.sleep(0.2)
 
     for msg in messages:
@@ -224,6 +224,9 @@ def route_message(header, body, sender_socket):
     """
     Routes a message from sender to the recipient.
     Delivers directly if online, stores in database if offline.
+    Binary files (images, video, audio, documents) are never stored -
+    SQLite cannot hold raw binary data. The client blocks this at P2P_DENIED
+    but we guard here too in case a file reaches this path unexpectedly.
     """
     sender   = header.get(FIELD_FROM)
     receiver = header.get(FIELD_TO)
@@ -246,7 +249,7 @@ def route_message(header, body, sender_socket):
             filename = header.get("FILENAME", f"file_{get_timestamp()}")
             success = send_file(recipient_socket, msg_type, sender, receiver, filename, body)
         else:
-           success = send_message(recipient_socket, msg_type, sender, receiver, body.decode("utf-8") if body else "")
+            success = send_message(recipient_socket, msg_type, sender, receiver, body.decode("utf-8") if body else "")
 
         if success:
             send_message(sender_socket, ACK, "server", sender, f"Message delivered to {receiver}")
@@ -254,10 +257,21 @@ def route_message(header, body, sender_socket):
         else:
             send_message(sender_socket, MESSAGE_FAILED, "server", sender, f"Could not deliver to {receiver}")
     else:
-        body_text = body.decode("utf-8") if body else ""
-        save_message(sender, receiver, msg_type, body_text, get_timestamp())
-        send_message(sender_socket, ACK, "server", sender, f"{receiver} is offline. Message stored.")
-        print(f"[STORE] {receiver} offline. Message from {sender} stored")
+        # --- Reject file transfers to offline users ---
+        # Binary files cannot be stored in SQLite alongside text messages.
+        # Attempting to do so would silently corrupt the data - the sender
+        # would receive a false ACK and the file would never arrive.
+        # We send MESSAGE_FAILED so the sender knows to try again when the
+        # recipient is online. Text messages still use store-and-forward as normal.
+        if msg_type in (IMAGE, VIDEO_FILE, AUDIO_FILE, DOCUMENT):
+            send_message(sender_socket, MESSAGE_FAILED, "server", sender,
+                         f"{receiver} is offline. File transfers require the recipient to be online.")
+            print(f"[FILE REJECTED] {msg_type} from {sender} -> {receiver} (offline)")
+        else:
+            body_text = body.decode("utf-8") if body else ""
+            save_message(sender, receiver, msg_type, body_text, get_timestamp())
+            send_message(sender_socket, ACK, "server", sender, f"{receiver} is offline. Message stored.")
+            print(f"[STORE] {receiver} offline. Message from {sender} stored")
 
 def route_group_message(header, body, sender_socket):
     """
@@ -279,9 +293,8 @@ def route_group_message(header, body, sender_socket):
     for member in members:
         if member == sender:
             continue
-        # check if member is blocked by sender
         if is_blocked(member, sender):
-            continue # skip sliently, dont deliver to this member
+            continue  # skip silently, don't deliver to this member
         sock = get_online_client_socket(member)
         if sock:
             send_message(sock, TEXT, sender, member, f"[{group_name}] {body_text}")
@@ -313,10 +326,10 @@ def handle_p2p_request(username, client_socket, header, body):
     Broker a direct file transfer: exchange addresses and step out.
     Sends P2P_SIGNAL to the sender with the peer's IP:port.
     Sends P2P_INCOMING to the receiver so it knows to expect the connection.
-    Sends P2P_DENIED if the peer is offline or has no registered P2P address,
-    so the client falls back to routing through the server.
+    Sends P2P_DENIED if the peer is offline - file transfers require both
+    users to be online since binary files cannot be stored for later delivery.
 
-    Body format: <filename>\n<filepath>\n<filesize>
+    Body format: <filename>\\n<filepath>\\n<filesize>
     """
     receiver = header.get(FIELD_TO)
     try:
@@ -331,8 +344,9 @@ def handle_p2p_request(username, client_socket, header, body):
     peer_sock = get_online_client_socket(receiver)
 
     if not peer_info or not peer_sock:
-        send_message(client_socket, P2P_DENIED, "server", username,
-                     f"{receiver} is offline or has no P2P address. Use /file to route via server.")
+        # server routing cannot store binary files for offline delivery either.
+        # New message tells the sender exactly what they need to do.
+        send_message(client_socket, P2P_DENIED, "server", username, f"{receiver} is offline. File transfers require the recipient to be online.")
         return
 
     peer_ip, peer_port = peer_info
@@ -463,7 +477,7 @@ def start_server():
     server_socket.listen(MAX_CLIENTS)
 
     print(f"[SERVER] Listening on {HOST}:{TCP_PORT}")
-    print(f"[SERVER] Waiting for connections... (Ctrl+C to stop)")
+    print(f"[SERVER] Waiting for connections...")
 
     try:
         while True:
