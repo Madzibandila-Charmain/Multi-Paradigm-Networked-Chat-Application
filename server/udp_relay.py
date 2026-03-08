@@ -91,7 +91,7 @@ def start_udp_relay():
 
             if msg_type == KEEP_ALIVE:
                 # Expected - client heartbeat to keep NAT maaping alive.
-                print("f[UDP RELAY] KEEP_ALIVE from {sender} (dropped as expected)")
+                print(f"[UDP RELAY] KEEP_ALIVE from {sender} (dropped as expected)")
                 continue
 
             if msg_type in RELAY_TYPES:
