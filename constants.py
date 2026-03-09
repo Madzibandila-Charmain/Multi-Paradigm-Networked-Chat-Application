@@ -29,6 +29,7 @@ DB_NAME = "ChatApp.db"
 MEDIA_DIR = "received_files"
 
 # Command messages (TCP)
+REGISTER     = "REGISTER"
 LOGIN        = "LOGIN"
 LOGOUT       = "LOGOUT"
 CREATE_GROUP = "CREATE_GROUP"
