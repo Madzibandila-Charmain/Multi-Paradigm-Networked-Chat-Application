@@ -174,9 +174,13 @@ class ClientHandler:
 
                     elif msg_type == "P2P_SIGNAL":
                         lines = body.split("\n")
+
                         peer_ip = lines[0].split(": ")[1]
-                        peer_username = lines[1].split(": ")[1]
-                        print(f"\n[P2P] Direct connection ready with {peer_username} at {peer_ip}")
+                        peer_port = int(lines[1].split(": ")[1])
+                        peer_username = lines[2].split(": ")[1]
+                        filename = lines[3].split(": ")[1]
+                        filepath = lines[4].split(": ")[1]
+                        print(f"\n[P2P] Direct connection ready with {peer_username} at {peer_ip}:{peer_port}")
 
                     elif msg_type == ACK:
                         print(f">> [ACK] {body}")
