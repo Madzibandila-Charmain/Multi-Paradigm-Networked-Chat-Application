@@ -23,7 +23,13 @@ from utils.message import (
     build_tcp_message, parse_tcp_header,
     build_udp_message, parse_udp_message, get_timestamp
 )
-from client.file_transfer import send_file, receive_file, detect_file_type
+from client.file_transfer import ( 
+    send_file, receive_file, detect_file_type
+)
+
+from constants import (
+    P2P_REGISTER, P2P_REQUEST
+)
 
 class ClientHandler:
 
@@ -61,6 +67,12 @@ class ClientHandler:
         msg = build_tcp_message(LOGIN, username, "server", body)
         self.tcp_socket.sendall(msg.encode())
 
+        #Registers P2P listening port
+        time.sleep(0.5)
+
+        register_msg = build_tcp_message(P2P_REGISTER,self.username,"server",str(self.p2p_port))
+        self.tcp_socket.sendall(register_msg.encode())
+
     def logout(self):
         try:
             msg = build_tcp_message(LOGOUT, self.username, "server")
@@ -75,7 +87,20 @@ class ClientHandler:
         sys.exit(0)
 
     def send_file(self, receiver, filepath):
-        send_file(self.tcp_socket, self.username, receiver, filepath)
+        if not os.path.exists(filepath):
+            print("[ERROR] File not found")
+            return
+
+        filesize = os.path.getsize(filepath)
+
+        # Asks the server for P2P connection
+        body = f"{os.path.basename(filepath)}\n{filepath}\n{filesize}"
+
+        msg = build_tcp_message(P2P_REQUEST,self.username,receiver,body)
+
+        self.tcp_socket.sendall(msg.encode())
+
+        print(f"[P2P REQUEST] Requesting direct transfer to {receiver}")
 
     def send_text(self, receiver, text):
         msg = build_tcp_message(TEXT, self.username, receiver, text)
@@ -149,9 +174,52 @@ class ClientHandler:
 
                     elif msg_type == "P2P_SIGNAL":
                         lines = body.split("\n")
+
+                        peer_ip = lines[0].split(": ")[1]
+                        peer_port = int(lines[1].split(": ")[1])
+                        peer_username = lines[2].split(": ")[1]
+                        filename = lines[3].split(": ")[1]
+                        filepath = lines[4].split(": ")[1]
+                        print(f"\n[P2P] Direct connection ready with {peer_username} at {peer_ip}:{peer_port}")
+
+                        #Opens the P2P connection and sends the file
+                        try:
+
+                            p2p_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                            p2p_socket.connect((peer_ip, peer_port))
+
+                            with open(filepath, "rb") as f:
+                                file_data = f.read()
+
+                            size = len(file_data)
+
+                            header = (
+                                f"TYPE: DOCUMENT\r\n"
+                                f"FROM: {self.username}\r\n"
+                                f"TO: {peer_username}\r\n"
+                                f"TIMESTAMP: {get_timestamp()}\r\n"
+                                f"FILENAME: {filename}\r\n"
+                                f"SIZE: {size}"
+                                f"{HEADER_BODY_SEPARATOR}"
+                            )
+
+                            p2p_socket.sendall(header.encode() + file_data)
+
+                            p2p_socket.close()
+
+                            print(f"[P2P SENT] {filename}")
+
+                        except Exception as e:
+                            print(f"[P2P ERROR] {e}")
+
+                    elif msg_type == "P2P_INCOMING":
+                        lines = body.split("\n")
+
                         peer_ip = lines[0].split(": ")[1]
                         peer_username = lines[1].split(": ")[1]
-                        print(f"\n[P2P] Direct connection ready with {peer_username} at {peer_ip}")
+                        filename = lines[2].split(": ")[1]
+
+                        print(f"\n[P2P] {peer_username} is sending you file: {filename}")
 
                     elif msg_type == ACK:
                         print(f">> [ACK] {body}")
