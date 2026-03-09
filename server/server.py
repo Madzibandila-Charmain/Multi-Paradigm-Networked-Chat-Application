@@ -10,23 +10,9 @@ import time
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from constants import (
-    HOST, TCP_PORT, BUFFER_SIZE, MAX_CLIENTS,
-    LOGIN, LOGOUT, TEXT, IMAGE, VIDEO_FILE, AUDIO_FILE, DOCUMENT,
-    ACK, ERROR, USER_ONLINE, USER_OFFLINE, MESSAGE_FAILED,
-    CREATE_GROUP, JOIN_GROUP, ADD_USER, REMOVE_USER, EXIT_GROUP, BLOCK_USER,
-    P2P_REGISTER, P2P_REQUEST, P2P_SIGNAL, P2P_INCOMING, P2P_DENIED,
-    FIELD_TYPE, FIELD_FROM, FIELD_TO, FIELD_SIZE,
-    HEADER_BODY_SEPARATOR
-)
-from utils.message import build_tcp_message, parse_tcp_header, get_timestamp
-
-from database.db_manager import (
-    verify_user, set_user_status, save_message,
-    get_offline_messages, mark_delivered,
-    get_group_members, is_blocked,
-    block_user, create_group, add_to_group, remove_from_group
-)
+from constants import *
+from utils.message import *
+from database.db_manager import *
 
 online_clients = {}
 online_clients_lock = threading.Lock()
@@ -384,7 +370,18 @@ def handle_client(client_socket, client_address):
             msg_type = header.get(FIELD_TYPE)
             print(f"[RECV] {msg_type} from {header.get(FIELD_FROM, '?')}")
 
-            if msg_type == LOGIN:
+            if msg_type == REGISTER:
+                username_reg = header.get(FIELD_FROM)
+                password_reg = body.decode("utf-8").replace("password: ", "").strip() if body else ""
+                if not username_reg or not password_reg:
+                    send_message(client_socket, ERROR, "server", "unknown", "Username and password required")
+                elif register_user(username_reg, password_reg):
+                    send_message(client_socket, ACK, "server", username_reg, "Registration successful. You can now log in.")
+                    print(f"[REGISTER] New user '{username_reg}' registered")
+                else:
+                    send_message(client_socket, ERROR, "server", username_reg, "Username already taken")
+
+            elif msg_type == LOGIN:
                 username = handle_login(client_socket, client_address, header, body)
                 if username is None:
                     break
@@ -477,7 +474,7 @@ def start_server():
     server_socket.listen(MAX_CLIENTS)
 
     print(f"[SERVER] Listening on {HOST}:{TCP_PORT}")
-    print(f"[SERVER] Waiting for connections...")
+    print(f"[SERVER] Waiting for connections... (Ctrl+C to stop)")
 
     try:
         while True:
