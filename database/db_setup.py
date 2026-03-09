@@ -10,12 +10,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from constants import DB_NAME
 
-from database.db_manager import (
-    register_user, verify_user, set_user_status,
-    save_message, get_offline_messages, mark_delivered,
-    create_group, add_to_group, remove_from_group,
-    get_group_members, block_user, is_blocked
-)
+from database.db_manager import *
 
 def create_tables():
     """
@@ -85,56 +80,6 @@ def create_tables():
     """)
     print("[DB] Table 'blocked_users' ready")
 
-def test_database():
-    """
-    Tests all the main database functions to confirm everything works.
-    Run this once after create_tables() to verify the database is ready.
-    """
-    print("\n[TEST] Starting database tests...")
-
-    # Test register and verify user
-    register_user("test_user", "test123")
-    assert verify_user("test_user", "test123") == True, "verify_user failed"
-    assert verify_user("test_user", "wrongpassword") == False, "verify_user should return False"
-    print("[TEST] register_user and verify_user passed")
-
-    # Test set_user_status
-    set_user_status("test_user", "online")
-    print("[TEST] set_user_status passed")
-
-    # Test save and retrieve offline messages
-    save_message("mukovhe", "test_user", "TEXT", "hello", "2026-03-03T10:00:00")
-    messages = get_offline_messages("test_user")
-    assert len(messages) > 0, "get_offline_messages failed"
-    print("[TEST] save_message and get_offline_messages passed")
-
-    # Test mark_delivered
-    mark_delivered(messages[0]["message_id"])
-    print("[TEST] mark_delivered passed")
-
-    # Test group functions
-    create_group("test_group", "test_user")
-    add_to_group("test_group", "mukovhe")
-    members = get_group_members("test_group")
-    assert "mukovhe" in members, "add_to_group failed"
-    remove_from_group("test_group", "mukovhe")
-    print("[TEST] Group functions passed")
-
-    # Test block functions
-    block_user("test_user", "mukovhe")
-    assert is_blocked("test_user", "mukovhe") == True, "is_blocked failed"
-    assert is_blocked("test_user", "charmain") == False, "is_blocked should return False"
-    print("[TEST] block_user and is_blocked passed")
-
-    print("\n[TEST] All tests passed - database is ready")
-
-
 if __name__ == "__main__":
     create_tables()
-    register_user("mukovhe", "password123")
-    register_user("charmain", "password123")
-    register_user("konke", "password123")
-    register_user("yashil", "password123")
-    register_user("mumi", "password123")
-    print("\n[DB] Test users registered")
-    test_database()
+    print("\n[DB] Database ready. Users can now register through the application.")
