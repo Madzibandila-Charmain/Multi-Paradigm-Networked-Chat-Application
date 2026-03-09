@@ -23,7 +23,13 @@ from utils.message import (
     build_tcp_message, parse_tcp_header,
     build_udp_message, parse_udp_message, get_timestamp
 )
-from client.file_transfer import send_file, receive_file, detect_file_type
+from client.file_transfer import ( 
+    send_file, receive_file, detect_file_type
+)
+
+from constants import (
+    P2P_REGISTER, P2P_REQUEST
+)
 
 class ClientHandler:
 
@@ -60,6 +66,12 @@ class ClientHandler:
         body = f"password: {password}"
         msg = build_tcp_message(LOGIN, username, "server", body)
         self.tcp_socket.sendall(msg.encode())
+
+        #Registers P2P listening port
+        time.sleep(0.5)
+
+        register_msg = build_tcp_message(P2P_REGISTER,self.username,"server",str(self.p2p_port))
+        self.tcp_socket.sendall(register_msg.encode())
 
     def logout(self):
         try:
