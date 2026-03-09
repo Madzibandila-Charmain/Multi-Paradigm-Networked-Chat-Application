@@ -1,10 +1,15 @@
 # Ranwashe Mukovhe
-# UDP Relay - forwards status updates between clients
+# UDP Relay - forwards real-time status updates between clients.
 #
-# Runs as a background thread alongside the TCP server.
-# Listens on UDP port 9001 for TYPING, USER_ONLINE, USER_OFFLINE
-# and forwards them immediately to the recipient.
-# Unlike TCP there is no connection, no ACK, no storage - fire and forget.
+# Listens on UDP port 9001 for TYPING and KEEP_ALIVE packets.
+# TYPING is forwarded to the recipient over their TCP connection.
+# KEEP_ALIVE is dropped intentionally - it is a client-to-server heartbeat
+# and should never be forwarded to another client.
+#
+# Note on forwarding over TCP: the relay receives TYPING over UDP but delivers
+# it via the recipient's TCP socket. This is because clients do not register a
+# UDP receive port, so the relay has no address to send a datagram back to.
+# Forwarding over TCP is functionally equivalent for TYPING indicators.
 
 import socket
 import sys
@@ -14,38 +19,33 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from constants import (
     HOST, UDP_PORT, BUFFER_SIZE,
-    TYPING, USER_ONLINE, USER_OFFLINE, KEEP_ALIVE,
+    TYPING, KEEP_ALIVE,
     FIELD_TYPE, FIELD_FROM, FIELD_TO
 )
-from utils.message import parse_udp_message, build_udp_message
+from utils.message import parse_udp_message, build_tcp_message
 
-# Import the shared online_clients dictionary from server.py
-# so we know each client's socket and can forward messages to them
+# Shared client registry from the TCP server
 from server.server import online_clients, online_clients_lock
-
 # Only these message types are allowed through the relay
 # Using a set instead of a list because checking membership is faster
 # KEEP_ALIVE is excluded - it's for server monitoring, not client-to-client forwarding
-UDP_MESSAGE_TYPES = {TYPING, USER_ONLINE, USER_OFFLINE}
+RELAY_TYPES = {TYPING}
 
-
-def forward_status(udp_socket, msg_type, sender, receiver):
+def forward_typing(msg_type, sender, receiver):
     """
     Looks up the recipient in online_clients and forwards the status message.
     If the recipient is offline the message is dropped - UDP never stores
     messages for later delivery, it is fire and forget.
     """
-    import threading
-
     with online_clients_lock:
         recipient_socket = online_clients.get(receiver, None)
 
     if recipient_socket is None:
-        print(f"[UDP RELAY] {receiver} offline, {msg_type} from {sender} dropped")
+        print(f"[UDP RELAY] {receiver} offline - {msg_type} from {sender} dropped")
         return
 
     try:
-        message = build_udp_message(msg_type, sender, receiver)
+        message = build_tcp_message(msg_type, sender, receiver, "")
         recipient_socket.sendall(message.encode("utf-8"))
         print(f"[UDP RELAY] {msg_type} from {sender} forwarded to {receiver}")
     except Exception as e:
@@ -65,7 +65,6 @@ def start_udp_relay():
     the sender's address (ip, port) because there is no connection to
     tell us who sent it.
     """
-    # SOCK_DGRAM = UDP, compare to SOCK_STREAM which is TCP
     udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     udp_socket.bind((HOST, UDP_PORT))
@@ -90,12 +89,16 @@ def start_udp_relay():
                 print(f"[UDP RELAY] Incomplete message from {sender_address}, dropped")
                 continue
 
-            if msg_type not in UDP_MESSAGE_TYPES:
-                print(f"[UDP RELAY] Unexpected message type {msg_type}, dropped")
+            if msg_type == KEEP_ALIVE:
+                # Expected - client heartbeat to keep NAT maaping alive.
+                print(f"[UDP RELAY] KEEP_ALIVE from {sender} (dropped as expected)")
                 continue
 
-            print(f"[UDP RELAY] Received {msg_type} from {sender} for {receiver}")
-            forward_status(udp_socket, msg_type, sender, receiver)
+            if msg_type in RELAY_TYPES:
+                print(f"[UDP RELAY] Received {msg_type} from {sender} for {receiver}")
+                forward_typing(msg_type, sender, receiver)
+            else:
+                print(f"[UDP RELAY] Unexpected message type {msg_type}, dropped")
 
         except Exception as e:
             # Print the error and keep going - never let one bad message stop the relay
