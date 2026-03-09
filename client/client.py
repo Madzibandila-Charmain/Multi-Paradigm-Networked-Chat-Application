@@ -328,9 +328,8 @@ if __name__ == "__main__":
 
     username = input("Enter username: ")
     password = input("Enter password: ")
-    client.login(username, password)
-
     client.start_threads()
+    client.login(username, password)
 
     print("\n========================================")
     print("     Welcome to CSC3002F Chat App       ")
