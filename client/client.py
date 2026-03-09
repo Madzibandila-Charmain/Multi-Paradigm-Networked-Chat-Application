@@ -87,7 +87,20 @@ class ClientHandler:
         sys.exit(0)
 
     def send_file(self, receiver, filepath):
-        send_file(self.tcp_socket, self.username, receiver, filepath)
+        if not os.path.exists(filepath):
+            print("[ERROR] File not found")
+            return
+
+        filesize = os.path.getsize(filepath)
+
+        # Asks the server for P2P connection
+        body = f"{os.path.basename(filepath)}\n{filepath}\n{filesize}"
+
+        msg = build_tcp_message(P2P_REQUEST,self.username,receiver,body)
+
+        self.tcp_socket.sendall(msg.encode())
+
+        print(f"[P2P REQUEST] Requesting direct transfer to {receiver}")
 
     def send_text(self, receiver, text):
         msg = build_tcp_message(TEXT, self.username, receiver, text)
