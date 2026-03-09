@@ -1,8 +1,14 @@
-# CSC3002F - Multi-Paradigm Chat Application
-# Helper functions for building and parsing protocol messages
-# Both the server and client import from this file
+# CSC3002F - Protocol message builder and parser
+# Used by both server and client to construct and decode messages.
+# All message construction is centralised here so the format never drifts
+# between endpoints - both sides use the exact same functions.
 
-import datetime
+import os
+import sys
+from datetime import datetime
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from constants import (
     FIELD_TYPE, FIELD_FROM, FIELD_TO, FIELD_TIMESTAMP, FIELD_SIZE,
     HEADER_BODY_SEPARATOR, HEADER_FIELD_SEPARATOR
@@ -10,29 +16,29 @@ from constants import (
 
 
 def get_timestamp():
-    """
-    Returns the current date and time as a formatted string.
-    Format: YYYY-MM-DDTHH:MM:SS
-    Used in every message header to record when the message was sent.
-    """
-    return datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    """Returns current time formatted as ISO 8601 string."""
+    return datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
 
 
 def build_tcp_message(msg_type, sender, receiver, body=""):
     """
-    Builds a complete TCP message ready to be sent over a socket.
+    Constructs a complete TCP protocol message as a string.
 
-    Parameters:
-        msg_type  - the type of message e.g. TEXT, LOGIN, ACK
-        sender    - the username of the user sending the message
-        receiver  - the username of the intended recipient
-        body      - the message content, empty string by default
+    Format:
+        TYPE: <type>\r\n
+        FROM: <sender>\r\n
+        TO:   <receiver>\r\n
+        TIMESTAMP: <ts>\r\n
+        SIZE: <body_byte_length>\r\n\r\n
+        <body>
 
-    Returns:
-        A string containing the full header and body separated by HEADER_BODY_SEPARATOR.
-        The SIZE field in the header reflects the byte length of the body.
+    SIZE is measured in UTF-8 bytes so the receiver knows exactly how many
+    bytes to read after the separator, regardless of multi-byte characters.
     """
-    body_bytes = body.encode("utf-8") if isinstance(body, str) else body
+    if isinstance(body, bytes):
+        body = body.decode("utf-8", errors="replace")
+
+    body_bytes = body.encode("utf-8")
     size = len(body_bytes)
 
     header = (
@@ -42,51 +48,38 @@ def build_tcp_message(msg_type, sender, receiver, body=""):
         f"{FIELD_TIMESTAMP}: {get_timestamp()}{HEADER_FIELD_SEPARATOR}"
         f"{FIELD_SIZE}: {size}"
     )
+    return header + HEADER_BODY_SEPARATOR + body
 
-    return header + HEADER_BODY_SEPARATOR + (body if isinstance(body, str) else "")
 
-def parse_tcp_header(raw_header):
+def parse_tcp_header(header_text):
     """
-    Parses a raw TCP header string into a dictionary.
+    Parses a raw header string into a dict of field → value pairs.
+    Returns None if the TYPE field is missing (i.e. the message is malformed).
 
-    Parameters:
-        raw_header - the header portion of a received TCP message as a string
-
-    Returns:
-        A dictionary with keys TYPE, FROM, TO, TIMESTAMP, SIZE.
-        Returns None if the header is malformed or cannot be parsed.
-
-    Example:
-        Input:  "TYPE: TEXT\r\nFROM: mukovhe\r\nTO: charmain\r\nTIMESTAMP: ...\r\nSIZE: 5"
-        Output: {"TYPE": "TEXT", "FROM": "mukovhe", "TO": "charmain", ...}
+    Each line in the header is expected to be "KEY: VALUE".
     """
-    try:
-        fields = {}
-        for line in raw_header.strip().split(HEADER_FIELD_SEPARATOR):
-            if ": " in line:
-                key, value = line.split(": ", 1)
-                fields[key.strip()] = value.strip()
-        return fields
-    except Exception as e:
-        print(f"[ERROR] Failed to parse TCP header: {e}")
-        return None
+    fields = {}
+    for line in header_text.strip().split(HEADER_FIELD_SEPARATOR):
+        if ": " in line:
+            key, value = line.split(": ", 1)
+            fields[key.strip()] = value.strip()
+
+    return fields if FIELD_TYPE in fields else None
 
 
 def build_udp_message(msg_type, sender, receiver):
     """
-    Builds a UDP status update message ready to be sent via the server relay.
+    Constructs a UDP status message as a string.
 
-    UDP messages have no body - the header alone carries all the information.
-    SIZE is not included since there is nothing to measure.
-    Used for TYPING, USER_ONLINE, USER_OFFLINE and KEEP_ALIVE messages.
+    UDP messages carry no body and therefore no SIZE field.
+    Each datagram is a self-contained single update - there is no sequence
+    number because lost packets are never retransmitted.
 
-    Parameters:
-        msg_type  - the type of status update e.g. TYPING, USER_ONLINE
-        sender    - the username of the user sending the update
-        receiver  - the username of the intended recipient
-
-    Returns:
-        A string containing the complete UDP message header.
+    Format:
+        TYPE: <type>\r\n
+        FROM: <sender>\r\n
+        TO:   <receiver>\r\n
+        TIMESTAMP: <ts>
     """
     return (
         f"{FIELD_TYPE}: {msg_type}{HEADER_FIELD_SEPARATOR}"
@@ -98,22 +91,8 @@ def build_udp_message(msg_type, sender, receiver):
 
 def parse_udp_message(raw_message):
     """
-    Parses a raw UDP message string into a dictionary.
-
-    Parameters:
-        raw_message - the full UDP message received as a string
-
-    Returns:
-        A dictionary with keys TYPE, FROM, TO, TIMESTAMP.
-        Returns None if the message is malformed or cannot be parsed.
+    Parses a raw UDP datagram string.
+    Reuses parse_tcp_header since the field format is identical -
+    only the set of expected fields differs.
     """
-    try:
-        fields = {}
-        for line in raw_message.strip().split(HEADER_FIELD_SEPARATOR):
-            if ": " in line:
-                key, value = line.split(": ", 1)
-                fields[key.strip()] = value.strip()
-        return fields
-    except Exception as e:
-        print(f"[ERROR] Failed to parse UDP message: {e}")
-        return None
+    return parse_tcp_header(raw_message)

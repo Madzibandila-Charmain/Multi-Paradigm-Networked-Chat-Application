@@ -2,3 +2,12 @@ __pycache__/
 *.pyc
 *.db
 received_files/
+
+# Submission and documentation files
+Assignment1_Stage2_Report.pdf
+Demo.mp4
+MDZMUT005_RNWMUK001_VZXKON001.zip
+Picture.png
+Stage 2 report.docx
+*.docx
+README.md
