@@ -182,6 +182,36 @@ class ClientHandler:
                         filepath = lines[4].split(": ")[1]
                         print(f"\n[P2P] Direct connection ready with {peer_username} at {peer_ip}:{peer_port}")
 
+                        #Opens the P2P connection and sends the file
+                        try:
+
+                            p2p_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                            p2p_socket.connect((peer_ip, peer_port))
+
+                            with open(filepath, "rb") as f:
+                                file_data = f.read()
+
+                            size = len(file_data)
+
+                            header = (
+                                f"TYPE: DOCUMENT\r\n"
+                                f"FROM: {self.username}\r\n"
+                                f"TO: {peer_username}\r\n"
+                                f"TIMESTAMP: {get_timestamp()}\r\n"
+                                f"FILENAME: {filename}\r\n"
+                                f"SIZE: {size}"
+                                f"{HEADER_BODY_SEPARATOR}"
+                            )
+
+                            p2p_socket.sendall(header.encode() + file_data)
+
+                            p2p_socket.close()
+
+                            print(f"[P2P SENT] {filename}")
+
+                        except Exception as e:
+                            print(f"[P2P ERROR] {e}")
+
                     elif msg_type == ACK:
                         print(f">> [ACK] {body}")
 
