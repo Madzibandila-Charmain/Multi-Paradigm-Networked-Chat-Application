@@ -212,6 +212,15 @@ class ClientHandler:
                         except Exception as e:
                             print(f"[P2P ERROR] {e}")
 
+                    elif msg_type == "P2P_INCOMING":
+                        lines = body.split("\n")
+
+                        peer_ip = lines[0].split(": ")[1]
+                        peer_username = lines[1].split(": ")[1]
+                        filename = lines[2].split(": ")[1]
+
+                        print(f"\n[P2P] {peer_username} is sending you file: {filename}")
+
                     elif msg_type == ACK:
                         print(f">> [ACK] {body}")
 
