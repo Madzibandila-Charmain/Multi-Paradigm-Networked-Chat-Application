@@ -61,6 +61,79 @@ class ClientHandler:
             print("Unable to establish connection to server.")
             print("Please verify server availability.")
 
+    def register(self):
+
+        username = input("Enter new username: ").strip()
+        password = input("Enter password: ").strip()
+
+        if not username or not password:
+            print("[ERROR] Username and password cannot be empty")
+            return False
+
+        #REGISTER message body
+        body = f"password: {password}"
+        msg = build_tcp_message(msg_type="REGISTER",sender=username,receiver="server",body=body)
+        
+        try:
+            self.tcp_socket.sendall(msg.encode("utf-8"))
+        except Exception as e:
+            print(f"[ERROR] Failed to send REGISTER: {e}")
+            return False
+
+        buffer = bytearray()
+        registration_complete = False
+
+        while True:
+            try:
+                chunk = self.tcp_socket.recv(4096)
+                if not chunk:
+                    print("[ERROR] Server closed connection")
+                    return False
+
+                buffer += chunk
+
+                while HEADER_BODY_SEPARATOR.encode("utf-8") in buffer:
+                    header_bytes, rest = buffer.split(HEADER_BODY_SEPARATOR.encode("utf-8"), 1)
+                    header = parse_tcp_header(header_bytes.decode("utf-8"))
+
+                    body_size = int(header.get("SIZE", 0))
+                    if len(rest) < body_size:
+                        break  # wait for full body
+
+                    body_bytes = bytes(rest[:body_size])
+                    buffer = bytearray(rest[body_size:])  # leftover for next message
+
+                    msg_type = header.get("TYPE")
+                    sender = header.get("FROM")
+                    message_body = body_bytes.decode("utf-8") if body_bytes else ""
+
+                    # Handle registration response
+                    if not registration_complete:
+                        if msg_type == "ACK":
+                            print(f"[SUCCESS] {message_body or 'Registration successful'}")
+                            registration_complete = True
+
+                        elif msg_type == "ERROR":
+                            print(f"[ERROR] {message_body or 'Registration failed'}")
+
+                        elif msg_type == "P2P_DENIED":
+                            print(f">> [P2P DENIED] {body}")
+
+                        elif msg_type == MESSAGE_FAILED:
+                            print(f">> [FAILED] {body}")
+
+                    # Handle any extra messages from server (like offline messages)
+                    if registration_complete:
+                        print(f"[SERVER MESSAGE] {msg_type} from {sender}: {message_body}")
+
+                if registration_complete:
+                    # Once registration is acknowledged, break out and return
+                    return True
+
+            except Exception as e:
+                print(f"[ERROR] Exception while waiting for server response: {e}")
+                return False
+
     def login(self, username, password=""):
         self.username = username
         body = f"password: {password}"
@@ -150,23 +223,31 @@ class ClientHandler:
 
                 buffer += data
 
-                while HEADER_BODY_SEPARATOR.encode() in buffer:
-                    header_part, buffer = buffer.split(HEADER_BODY_SEPARATOR.encode(), 1)
-                    header_text = header_part.decode()
+                while True:
+
+                    sep_index = buffer.find(HEADER_BODY_SEPARATOR.encode())
+
+                    if sep_index == -1:
+                        break
+
+                    header_part = buffer[:sep_index]
+                    remaining = buffer[sep_index + len(HEADER_BODY_SEPARATOR):]
+
+                    header_text = header_part.decode(errors="ignore")
                     parsed = parse_tcp_header(header_text)
 
                     if not parsed:
+                        buffer = remaining
                         continue
 
-                    msg_type = parsed[FIELD_TYPE]
+                    msg_type = parsed.get(FIELD_TYPE)
                     size = int(parsed.get(FIELD_SIZE, 0))
 
-                    if len(buffer) < size:
-                        buffer = header_part + HEADER_BODY_SEPARATOR.encode() + buffer
+                    if len(remaining) < size:
                         break
 
-                    body_bytes = buffer[:size]
-                    buffer = buffer[size:]
+                    body_bytes = remaining[:size]
+                    buffer = remaining[size:]
                     body = body_bytes.decode(errors="ignore")
 
                     if msg_type in (IMAGE, VIDEO_FILE, AUDIO_FILE, DOCUMENT):
@@ -175,11 +256,16 @@ class ClientHandler:
                     elif msg_type == "P2P_SIGNAL":
                         lines = body.split("\n")
 
-                        peer_ip = lines[0].split(": ")[1]
-                        peer_port = int(lines[1].split(": ")[1])
-                        peer_username = lines[2].split(": ")[1]
-                        filename = lines[3].split(": ")[1]
-                        filepath = lines[4].split(": ")[1]
+                        try:
+                            peer_ip = lines[0].split(": ")[1]
+                            peer_port = int(lines[1].split(": ", 1)[1])
+                            peer_username = lines[2].split(": ", 1)[1]
+                            filename = lines[3].split(": ", 1)[1]
+                            filepath = lines[4].split(": ", 1)[1]
+                        except Exception:
+                            print("[P2P ERROR] Malformed P2P_SIGNAL message")
+                            continue
+
                         print(f"\n[P2P] Direct connection ready with {peer_username} at {peer_ip}:{peer_port}")
 
                         #Opens the P2P connection and sends the file
@@ -188,22 +274,30 @@ class ClientHandler:
                             p2p_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                             p2p_socket.connect((peer_ip, peer_port))
 
-                            with open(filepath, "rb") as f:
-                                file_data = f.read()
-
-                            size = len(file_data)
+                            file_type = detect_file_type(filename)
+                            size = os.path.getsize(filepath)
 
                             header = (
-                                f"TYPE: DOCUMENT\r\n"
-                                f"FROM: {self.username}\r\n"
-                                f"TO: {peer_username}\r\n"
-                                f"TIMESTAMP: {get_timestamp()}\r\n"
-                                f"FILENAME: {filename}\r\n"
+                                f"TYPE: {file_type}{HEADER_FIELD_SEPARATOR}"
+                                f"FROM: {self.username}{HEADER_FIELD_SEPARATOR}"
+                                f"TO: {peer_username}{HEADER_FIELD_SEPARATOR}"
+                                f"TIMESTAMP: {get_timestamp()}{HEADER_FIELD_SEPARATOR}"
+                                f"FILENAME: {filename}{HEADER_FIELD_SEPARATOR}"
                                 f"SIZE: {size}"
                                 f"{HEADER_BODY_SEPARATOR}"
                             )
 
-                            p2p_socket.sendall(header.encode() + file_data)
+                            p2p_socket.sendall(header.encode())
+
+                            # Stream file in chunks
+                            with open(filepath, "rb") as f:
+                                while True:
+                                    chunk = f.read(BUFFER_SIZE)
+
+                                    if not chunk:
+                                        break
+
+                                    p2p_socket.sendall(chunk)
 
                             p2p_socket.close()
 
@@ -215,9 +309,13 @@ class ClientHandler:
                     elif msg_type == "P2P_INCOMING":
                         lines = body.split("\n")
 
-                        peer_ip = lines[0].split(": ")[1]
-                        peer_username = lines[1].split(": ")[1]
-                        filename = lines[2].split(": ")[1]
+                        try:
+                            peer_ip = lines[0].split(": ", 1)[1]
+                            peer_username = lines[1].split(": ", 1)[1]
+                            filename = lines[2].split(": ", 1)[1]
+                        except Exception:
+                            print("[P2P ERROR] Malformed P2P_INCOMING message")
+                            continue
 
                         print(f"\n[P2P] {peer_username} is sending you file: {filename}")
 
@@ -244,9 +342,11 @@ class ClientHandler:
             except Exception as e:
                 if self.keep_running:
                     error_msg = str(e)
+
                     print(f"\n┌─[ERROR] NETWORK EXCEPTION")
                     print(f"│ {error_msg}")
                     print("└" + "─" * len(error_msg) + "\n")
+
                 break
 
     def p2p_thread(self):
@@ -276,10 +376,41 @@ class ClientHandler:
             try:
                 data, _ = self.udp_socket.recvfrom(BUFFER_SIZE)
                 parsed = parse_udp_message(data.decode())
-                if parsed:
-                    print(f"\n[UDP] {parsed['TYPE']} from {parsed['FROM']}")
+                if not parsed:
+                    continue
+
+                msg_type = parsed.get("TYPE")
+                sender = parsed.get("FROM")
+
+                if msg_type == TYPING:
+                    # Display typing indicator above current input
+                    self._print_above_input(f"* {sender} is typing... *")
+                    threading.Thread(target=self._clear_typing_indicator, args=(sender,)).start()
+                
+                elif msg_type == KEEP_ALIVE:
+                    pass
+                
+                else:
+                    self._print_above_input(f"[UDP] {msg_type} from {sender}")
             except:
                 break
+
+    # Helper to print above the current input line
+    def _print_above_input(self, message):
+        # Move cursor to new line
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+        print(message)
+        # Reprint input prompt
+        sys.stdout.write(">> ")
+        sys.stdout.flush()
+
+    #temporary typing indicator removal
+    def _clear_typing_indicator(self, sender, delay=3):
+        time.sleep(delay)
+        # Just reprint the prompt to "clear" the typing indicator
+        sys.stdout.write("\r>> ")
+        sys.stdout.flush()
 
     def send_typing(self, receiver):
         msg = build_udp_message(TYPING, self.username, receiver)
@@ -325,6 +456,14 @@ if __name__ == "__main__":
 
     client = ClientHandler()
     client.connect()
+
+    print("1. Register")
+    print("2. Login")
+
+    choice = input("Select option: ")
+
+    if choice == "1":
+        client.register()
 
     username = input("Enter username: ")
     password = input("Enter password: ")
