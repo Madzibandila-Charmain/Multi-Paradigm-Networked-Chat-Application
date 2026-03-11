@@ -8,6 +8,7 @@ import customtkinter as ctk
 import tkinter as tk
 from tkinter import filedialog, messagebox
 import threading
+import socket
 import os
 import sys
 import time
@@ -25,7 +26,7 @@ from constants import (
 from utils.message import build_tcp_message, parse_tcp_header
 from constants import HEADER_BODY_SEPARATOR, FIELD_SIZE
 
-# Appearancwe
+# Appearance
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
@@ -143,13 +144,13 @@ class LoginWindow(ctk.CTk):
             try:
                 client = ClientHandler()
                 client.connect()
-                client.login(username, password)
+                login_success = client.login(username, password)
 
-                # wait for server ACK/ERROR
-                time.sleep(0.8)
-
-                self.client = client
-                self.after(0, self._on_login_success)
+                if login_success:
+                    self.client = client
+                    self.after(0, self._on_login_success)
+                else:
+                    self.after(0, lambda: self._on_login_fail("Login failed - invalid credentials"))
             except Exception as e:
                 self.after(0, lambda: self._on_login_fail(str(e)))
 
@@ -183,7 +184,10 @@ class ChatApp(ctk.CTk):
 
         self._build_ui()
         self._start_receive_thread()
-        self.client.start_threads()   # udp, keep-alive, p2p threads
+        # Start only UDP, keep-alive, and P2P threads (NOT TCP - we handle that in GUI)
+        self.client.udp_thread()
+        self.client.keep_alive_thread()
+        self.client.start_p2p_thread()
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -478,8 +482,11 @@ class ChatApp(ctk.CTk):
         self.msg_input.delete(0, "end")
 
     def _send_file(self):
-        if not self.current_chat or self.current_chat.startswith("grp:"):
-            messagebox.showinfo("File send", "Open a direct chat to send files.")
+        if not self.current_chat:
+            messagebox.showinfo("File send", "Open a conversation to send files.")
+            return
+        if self.current_chat.startswith("grp:"):
+            messagebox.showinfo("File send", "File sending is only available for direct chats.")
             return
         path = filedialog.askopenfilename(
             title="Select file",
@@ -546,6 +553,10 @@ class ChatApp(ctk.CTk):
                         self.after(0, lambda h=header, b=body, mb=body_bytes, mt=msg_type:
                                    self._handle_incoming(h, b, mb, mt))
 
+                except socket.error as e:
+                    if self.client.keep_running:
+                        print(f"[GUI RECV SOCKET ERROR] {e}")
+                    break
                 except Exception as e:
                     if self.client.keep_running:
                         print(f"[GUI RECV ERROR] {e}")
@@ -568,10 +579,21 @@ class ChatApp(ctk.CTk):
             self._flash_status(f"⚠ {body}", WARNING)
 
         elif msg_type == TEXT:
-            # group messages have [groupname] prefix added by server
-            chat = sender
-            self._add_or_update_conversation(chat)
-            self._append_message(chat, sender, body, ts)
+            # Check if it's a group message (has [groupname] prefix from server)
+            import re
+            group_match = re.match(r'^\[(.+?)\]\s*(.*)', body)
+            if group_match:
+                # Group message
+                group_name = group_match.group(1)
+                message_text = group_match.group(2)
+                chat = f"grp:{group_name}"
+                self._add_or_update_conversation(chat)
+                self._append_message(chat, sender, message_text, ts)
+            else:
+                # Direct message
+                chat = sender
+                self._add_or_update_conversation(chat)
+                self._append_message(chat, sender, body, ts)
 
         elif msg_type in (IMAGE, VIDEO_FILE, AUDIO_FILE, DOCUMENT):
             from client.file_transfer import receive_file
@@ -596,6 +618,41 @@ class ChatApp(ctk.CTk):
         elif msg_type == TYPING:
             self.typing_label.configure(text=f"{sender} is typing...")
             self.after(2000, lambda: self.typing_label.configure(text=""))
+
+        elif msg_type == "P2P_SIGNAL":
+            # Server has approved P2P transfer, extract peer info and initiate send
+            try:
+                lines = body.split("\n")
+                peer_ip       = lines[0].split(": ", 1)[1]
+                peer_port     = int(lines[1].split(": ", 1)[1])
+                peer_username = lines[2].split(": ", 1)[1]
+                filename      = lines[3].split(": ", 1)[1]
+                filepath      = lines[4].split(": ", 1)[1]
+
+                # Start P2P file transfer in background thread
+                threading.Thread(
+                    target=self.client._do_p2p_send,
+                    args=(peer_ip, peer_port, peer_username, filename, filepath),
+                    daemon=True
+                ).start()
+                self._flash_status(f"📤 Sending {filename} to {peer_username}...")
+            except Exception as e:
+                self._flash_status(f"✗ P2P transfer failed: {e}", DANGER)
+
+        elif msg_type == "P2P_INCOMING":
+            # Peer is about to send us a file via P2P
+            try:
+                lines = body.split("\n")
+                peer_ip   = lines[0].split(": ", 1)[1]
+                sender_user = lines[1].split(": ", 1)[1]
+                filename  = lines[2].split(": ", 1)[1]
+                filesize  = lines[3].split(": ", 1)[1]
+                self._flash_status(f"📥 Receiving {filename} from {sender_user}...")
+            except Exception as e:
+                self._flash_status(f"✗ Failed to parse P2P incoming: {e}", DANGER)
+
+        elif msg_type == "P2P_DENIED":
+            self._flash_status(f"✗ {body}", DANGER)
 
     def _flash_status(self, msg, color=SUCCESS):
         self.typing_label.configure(text=msg, text_color=color)
@@ -695,7 +752,7 @@ class ChatApp(ctk.CTk):
     def _on_close(self):
         try:
             self.client.logout()
-        except Exception:
+        except (socket.error, Exception):
             pass
         self.destroy()
 
