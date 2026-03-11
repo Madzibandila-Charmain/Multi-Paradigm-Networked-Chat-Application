@@ -330,6 +330,9 @@ class ClientHandler:
 
                         print(f"\n[P2P] {peer_username} is sending you file: {filename}")
 
+                    elif msg_type == "P2P_DENIED":
+                        print(f"\n[FILE FAILED] {body}")
+
                     elif msg_type == ACK:
                         print(f">> [ACK] {body}")
 
@@ -340,13 +343,13 @@ class ClientHandler:
                         print(f">> [FAILED] {body}")
 
                     elif msg_type == USER_ONLINE:
-                        print(f"\n[+] {parsed['FROM']} is now online")
+                        print(f"\n[+] {parsed.get('FROM', '?')} is now online")
 
                     elif msg_type == USER_OFFLINE:
-                        print(f"\n[-] {parsed['FROM']} has gone offline")
+                        print(f"\n[-] {parsed.get('FROM', '?')} has gone offline")
 
                     else:
-                        print(f"\n┌─[{parsed['FROM']}] @ {parsed['TIMESTAMP']}")
+                        print(f"\n┌─[{parsed.get('FROM', '?')}] @ {parsed.get('TIMESTAMP', '')}")
                         print(f"| {body}")
                         print("└" + "─" * (len(str(body)) + 2))
 
@@ -484,7 +487,7 @@ if __name__ == "__main__":
     else:
         username = input("Enter username: ").strip()
         password = input("Enter password: ").strip()
-        
+
     client.login(username, password)
     client.start_threads()
 
