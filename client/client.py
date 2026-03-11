@@ -60,6 +60,7 @@ class ClientHandler:
             print("=== CONNECTION FAILED ===")
             print("Unable to establish connection to server.")
             print("Please verify server availability.")
+            sys.exit(1)
 
     def register(self):
 
@@ -473,10 +474,17 @@ if __name__ == "__main__":
     choice = input("Select option: ")
 
     if choice == "1":
-        client.register()
-
-    username = input("Enter username: ")
-    password = input("Enter password: ")
+        registered_username = client.register()
+        if not registered_username:
+            print("Registration failed. Exiting.")
+            sys.exit(1)
+        print("You can now log in with your new credentials.")
+        username = registered_username
+        password = input("Enter password: ").strip()
+    else:
+        username = input("Enter username: ").strip()
+        password = input("Enter password: ").strip()
+        
     client.login(username, password)
     client.start_threads()
 
