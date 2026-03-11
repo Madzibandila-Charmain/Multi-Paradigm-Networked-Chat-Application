@@ -46,6 +46,7 @@ class ClientHandler:
 
         # P2P server socket for direct file transfers
         self.p2p_server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.p2p_server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.p2p_server_socket.bind(("0.0.0.0", 0))
         self.p2p_server_socket.listen(5)
         self.p2p_port = self.p2p_server_socket.getsockname()[1]
@@ -283,6 +284,7 @@ class ClientHandler:
                         try:
 
                             p2p_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
                             p2p_socket.connect((peer_ip, peer_port))
 
                             file_type = detect_file_type(filename)
