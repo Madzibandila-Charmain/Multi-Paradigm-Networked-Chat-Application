@@ -477,8 +477,8 @@ if __name__ == "__main__":
 
     username = input("Enter username: ")
     password = input("Enter password: ")
-    client.start_threads()
     client.login(username, password)
+    client.start_threads()
 
     print("""
     ════════════════════════════════════════════════════════════════
@@ -489,17 +489,19 @@ if __name__ == "__main__":
     ░╚██╔╝░╚██╔╝░███████╗███████╗╚█████╔╝╚█████╔╝██║░╚═╝░██║███████╗
     ░░╚═╝░░░╚═╝░░╚══════╝╚══════╝░╚════╝░░╚════╝░╚═╝░░░░░╚═╝╚══════╝
     ════════════════════════════════════════════════════════════════
-    print("========================================")
-    print("  /msg <user> <text>          - Send a message")
-    print("  /file <user> <path>         - Send a file")
-    print("  /block <user>               - Block a user")
-    print("  /create <group>             - Create a group")
-    print("  /add <group> <user>         - Add user to group")
-    print("  /gmsg <group> <text>        - Send group message")
-    print("  /join <group>               - Join a group")
-    print("  /leave <group>              - Leave a group")
-    print("  /exit                       - Quit")
-    print("========================================\n""")
+    """)
+    print(f"  logged in as: {username}")
+    print()
+    print("  /msg  <user> <text>      send a message")
+    print("  /file <user> <path>      send a file")
+    print("  /gmsg <group> <text>     group message")
+    print("  /create <group>          create a group")
+    print("  /join  <group>           join a group")
+    print("  /add   <group> <user>    add to group")
+    print("  /leave <group>           leave a group")
+    print("  /block <user>            block a user")
+    print("  /exit                    quit")
+    print()
 
     while True:
         command = input(">> ")
