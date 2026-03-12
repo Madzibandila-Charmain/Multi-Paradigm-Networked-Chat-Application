@@ -432,9 +432,19 @@ def handle_client(client_socket, client_address):
 
                     # Prevent adding yourself
                     if user_to_add == username:
-                        send_message(client_socket, ERROR, "server", username, "You cannot add yourself to a group.")
+                        send_message(client_socket, ERROR, "server", username,
+                                    "You cannot add yourself to a group you created.")
+                        continue
+                    
+                    #Check if user already in group
+                    members = get_group_members(group_name)
+
+                    if user_to_add in members:
+                        send_message(client_socket, ERROR, "server", username,
+                                    f"{user_to_add} is already in '{group_name}'")
                         continue
 
+                    
                     add_to_group(group_name, user_to_add)
 
                     #Ack to the creator
