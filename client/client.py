@@ -64,9 +64,9 @@ class ClientHandler:
     def connect(self):
         try:
             self.tcp_socket.connect((HOST, TCP_PORT))
-            print(f"{Fore.LIGHTGREEN_EX}=== SERVER HANDSHAKE COMPLETE ==={Style.RESET_ALL}")
-            print(f"{LBLUE}Connected to server at {Fore.LIGHTYELLOW_EX}{HOST}:{TCP_PORT}{Style.RESET_ALL}")
-            print(f"{LBLUE}Communication channel open.{Style.RESET_ALL}")
+            print(f"=== SERVER HANDSHAKE COMPLETE ===")
+            print(f"{LBLUE}Connected to server at {HOST}:{TCP_PORT}{Style.RESET_ALL}")
+            print(f"Communication channel open.")
         except Exception as e:
             print(f"{Fore.LIGHTRED_EX}=== CONNECTION FAILED ==={Style.RESET_ALL}")
             print(f"{Fore.LIGHTYELLOW_EX}Unable to establish connection to server.{Style.RESET_ALL}")
@@ -88,7 +88,7 @@ class ClientHandler:
 
         try:
             self.tcp_socket.sendall(msg.encode("utf-8"))
-            print(f"{Fore.LIGHTGREEN_EX}Registration request sent{Style.RESET_ALL}")
+            print(f"Registration request sent")
         except Exception as e:
             print(f"{Fore.LIGHTRED_EX}[ERROR] Failed to send REGISTER: {e}{Style.RESET_ALL}")
             return None
@@ -138,7 +138,7 @@ class ClientHandler:
 
                     # Handle any extra messages from server (like offline messages)
                     if registration_complete:
-                        print(f"{LBLUE}[SERVER MESSAGE] {msg_type} from {sender}: {message_body}{Style.RESET_ALL}")
+                        print(f"[SERVER MESSAGE] {msg_type} from {sender}: {message_body}")
 
                 if registration_complete:
                     # Once registration is acknowledged, break out and return
@@ -153,7 +153,7 @@ class ClientHandler:
         body = f"password: {password}"
         msg = build_tcp_message(LOGIN, username, "server", body)
         self.tcp_socket.sendall(msg.encode())
-        print(f"{Fore.LIGHTGREEN_EX}Login request sent{Style.RESET_ALL}")
+        print(f"Login request sent")
 
         buffer = b""
 
@@ -191,7 +191,7 @@ class ClientHandler:
                     print(f"{Fore.LIGHTGREEN_EX}Login successful{Style.RESET_ALL}")
                     register_msg = build_tcp_message(P2P_REGISTER, self.username, "server", str(self.p2p_port))
                     self.tcp_socket.sendall(register_msg.encode())
-                    print(f"{SALMON}P2P port {self.p2p_port} registered{Style.RESET_ALL}")
+                    print(f"{LBLUE}P2P port {self.p2p_port} registered{Style.RESET_ALL}")
                     return True
 
                 elif msg_type == ERROR:
@@ -434,9 +434,10 @@ class ClientHandler:
                                 print(f"{SALMON}└{'─' * 40}{Style.RESET_ALL}")
                             else:
                                 print()
-                                print(f"{LBLUE}┌─ {sender} @ {time_str}{Style.RESET_ALL}")
-                                print(f"{LBLUE}│{Style.RESET_ALL} {body}")
-                                print(f"{LBLUE}└{'─' * 40}{Style.RESET_ALL}")
+                                print(f"┌─ {sender} @ {time_str}")
+                                print(f"│{body}")
+                                print(f"└{'─' * 40}")
+                                print(f"{LBLUE}[{self.username}]{Style.RESET_ALL} > ", end="", flush=True)
 
             except Exception as e:
                 if self.keep_running:
@@ -588,14 +589,6 @@ if __name__ == "__main__":
     # Clear screen for better visibility
     os.system('cls' if os.name == 'nt' else 'clear')
 
-    # Print banner
-    print(f"{LBLUE}{'═' * 60}{Style.RESET_ALL}")
-    print(f"{LBLUE}║{' ' * 58}║{Style.RESET_ALL}")
-    print(f"{LBLUE}║{Fore.LIGHTYELLOW_EX}{'CSC3002F CHAT CLIENT'.center(58)}{LBLUE}║{Style.RESET_ALL}")
-    print(f"{LBLUE}║{Fore.LIGHTGREEN_EX}{'Multi-Paradigm Chat Application'.center(58)}{LBLUE}║{Style.RESET_ALL}")
-    print(f"{LBLUE}║{' ' * 58}║{Style.RESET_ALL}")
-    print(f"{LBLUE}{'═' * 60}{Style.RESET_ALL}\n")
-
     client = ClientHandler()
     client.connect()
 
@@ -623,7 +616,7 @@ if __name__ == "__main__":
                 print(f"{Fore.LIGHTRED_EX}Registration failed. Please try again.{Style.RESET_ALL}")
                 continue
 
-            print(f"{Fore.LIGHTGREEN_EX}You can now log in with your new credentials.{Style.RESET_ALL}")
+            print(f"You can now log in with your new credentials.")
             username = registered_username
             password = input(f"\n{LBLUE}Enter password: {Style.RESET_ALL}").strip()
 
@@ -650,22 +643,23 @@ if __name__ == "__main__":
     # Only runs after successful login
     client.start_threads()
 
-    print(f"\n  {Fore.LIGHTGREEN_EX}logged in as: {Fore.LIGHTYELLOW_EX}{username}{Style.RESET_ALL}\n")
-    print(f"  {LBLUE}/msg  <user> <text>      send a message{Style.RESET_ALL}")
-    print(f"  {SALMON}/file <user> <path>      send a file{Style.RESET_ALL}")
-    print(f"  {SALMON}/gmsg <group> <text>     group message{Style.RESET_ALL}")
-    print(f"  {SALMON}/create <group>          create a group{Style.RESET_ALL}")
-    print(f"  {SALMON}/join  <group>           join a group{Style.RESET_ALL}")
-    print(f"  {SALMON}/add   <group> <user>    add to group{Style.RESET_ALL}")
-    print(f"  {SALMON}/remove <group> <user>   remove from group{Style.RESET_ALL}")
-    print(f"  {SALMON}/leave <group>           leave a group{Style.RESET_ALL}")
-    print(f"  {Fore.LIGHTRED_EX}/block <user>            block a user{Style.RESET_ALL}")
-    print(f"  {Fore.LIGHTYELLOW_EX}/exit                    quit{Style.RESET_ALL}")
-    print()
+    print(f"\n  {Fore.LIGHTYELLOW_EX}logged in as: {username}{Style.RESET_ALL}")
+    print(f"\n  {'─' * 44}")
+    print(f"  /msg  <user> <text>      send a message")
+    print(f"  /file <user> <path>      send a file")
+    print(f"  /gmsg <group> <text>     group message")
+    print(f"  /create <group>          create a group")
+    print(f"  /join  <group>           join a group")
+    print(f"  /add   <group> <user>    add to group")
+    print(f"  /remove <group> <user>   remove from group")
+    print(f"  /leave <group>           leave a group")
+    print(f"  /block <user>            block a user")
+    print(f"  /exit                    quit")
+    print(f"  {'─' * 44}\n")
 
     while True:
         try:
-            command = input(f"\n{Fore.LIGHTGREEN_EX}>>{Style.RESET_ALL} ")
+            command = input(f"{LBLUE}[{username}]{Style.RESET_ALL} > ")
 
             if not command.strip():
                 continue
