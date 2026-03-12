@@ -276,7 +276,7 @@ def route_group_message(header, body, sender_socket):
     sender     = header.get(FIELD_FROM)
     group_name = header.get(FIELD_TO)
     msg_type   = header.get(FIELD_TYPE)
-    is_file    = msg_type in (IMAGE, VIDEO_FILE, AUDIO_FILE, DOCUMENT)
+    is_file = msg_type == "GROUP_FILE" or msg_type in (IMAGE, VIDEO_FILE, AUDIO_FILE, DOCUMENT)
 
     members = get_group_members(group_name)
 
@@ -292,6 +292,12 @@ def route_group_message(header, body, sender_socket):
     skipped   = 0
     filename  = header.get("FILENAME", f"file_{get_timestamp()}")
 
+    if is_file:
+        from client.file_transfer import detect_file_type
+        file_type = detect_file_type(filename)
+    else:
+        file_type = msg_type
+
     for member in members:
         if member == sender:
             continue
@@ -301,7 +307,7 @@ def route_group_message(header, body, sender_socket):
         sock = get_online_client_socket(member)
         if sock:
             if is_file:
-                send_file(sock, msg_type, sender, member, filename, body)
+                send_file(sock, file_type, sender, member, filename, body)
             else:
                 body_text = body.decode("utf-8") if body else ""
                 send_message(sock, TEXT, sender, member, f"[{group_name}] {body_text}")
