@@ -384,7 +384,7 @@ def handle_client(client_socket, client_address):
             elif msg_type == LOGIN:
                 username = handle_login(client_socket, client_address, header, body)
                 if username is None:
-                    break
+                    continue
 
             elif msg_type == LOGOUT:
                 send_message(client_socket, ACK, "server", username, "Logged out")
