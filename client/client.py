@@ -260,7 +260,10 @@ class ClientHandler:
         print(f"{Fore.MAGENTA}Joining group: {group_name}{Style.RESET_ALL}")
 
     def add_user(self, group_name, user_to_add):
-        # body format: "group_name:username" so server can extract both
+        if user_to_add == self.username:
+            print(f"{Fore.RED}[GROUP ERROR] You cannot add yourself to a group you created.{Style.RESET_ALL}")
+            return
+    
         body = f"{group_name}:{user_to_add}"
         msg = build_tcp_message(ADD_USER, self.username, "server", body)
         self.tcp_socket.sendall(msg.encode())
@@ -426,6 +429,10 @@ class ClientHandler:
                     elif msg_type == USER_OFFLINE:
                         print(
                             f"{Fore.RED}[{time_str}] [-] {Fore.CYAN}{parsed.get('FROM', '?')}{Fore.RED} has gone offline{Style.RESET_ALL}")
+                        
+                    elif msg_type == "GROUP_ADDED":
+                        print(
+                            f"{Fore.MAGENTA}[GROUP] {body}{Style.RESET_ALL}")
 
                     else:
                         sender = parsed.get('FROM', '?')
