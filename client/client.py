@@ -238,6 +238,33 @@ class ClientHandler:
         msg = build_tcp_message("GROUP_MSG", self.username, group_name, text)
         self.tcp_socket.sendall(msg.encode())
 
+    def send_group_file(self, group_name, filepath):
+        if not os.path.exists(filepath):
+            print(f"{Fore.LIGHTRED_EX}[ERROR] File not found{Style.RESET_ALL}")
+            return
+
+        msg_type = detect_file_type(filepath)
+        if not msg_type:
+            print(f"{Fore.LIGHTRED_EX}[ERROR] Unsupported file type{Style.RESET_ALL}")
+            return
+
+        filename = os.path.basename(filepath)
+        with open(filepath, "rb") as f:
+            file_data = f.read()
+
+        size = len(file_data)
+        header = (
+            f"TYPE: GROUP_FILE{HEADER_FIELD_SEPARATOR}"
+            f"FROM: {self.username}{HEADER_FIELD_SEPARATOR}"
+            f"TO: {group_name}{HEADER_FIELD_SEPARATOR}"
+            f"TIMESTAMP: {get_timestamp()}{HEADER_FIELD_SEPARATOR}"
+            f"FILENAME: {filename}{HEADER_FIELD_SEPARATOR}"
+            f"SIZE: {size}"
+            f"{HEADER_BODY_SEPARATOR}"
+        )
+        self.tcp_socket.sendall(header.encode() + file_data)
+        print(f"{SALMON}[GROUP FILE] Sending {filename} to group {group_name}{Style.RESET_ALL}")
+
     def create_group(self, group_name):
         msg = build_tcp_message(CREATE_GROUP, self.username, "server", group_name)
         self.tcp_socket.sendall(msg.encode())
@@ -417,9 +444,9 @@ class ClientHandler:
 
                         if is_self:
                             print()
-                            print(f"{Fore.LIGHTGREEN_EX}┌─ You [{time_str}]{Style.RESET_ALL}")
-                            print(f"{Fore.LIGHTGREEN_EX}│ {Style.RESET_ALL}{body}")
-                            print(f"{Fore.LIGHTGREEN_EX}└{'─' * 40}{Style.RESET_ALL}")
+                            print(f"{Fore.WHITE}┌─ You [{time_str}]{Style.RESET_ALL}")
+                            print(f"{Fore.WHITE}│ {Style.RESET_ALL}{body}")
+                            print(f"{Fore.WHITE}└{'─' * 40}{Style.RESET_ALL}")
                             print(f"{LBLUE}[{self.username}]{Style.RESET_ALL} > ", end="", flush=True)
                         else:
                             # Check if it's a group message
@@ -429,9 +456,9 @@ class ClientHandler:
                                 group_name = body[1:group_end]
                                 actual_msg = body[group_end + 1:].strip()
                                 print()
-                                print(f"{SALMON}┌─ [{sender}] → [{group_name}] @ {time_str}{Style.RESET_ALL}")
-                                print(f"{SALMON}│ {Style.RESET_ALL}{actual_msg}")
-                                print(f"{SALMON}└{'─' * 40}{Style.RESET_ALL}")
+                                print(f"{Fore.WHITE}┌─ [{sender}] → [{group_name}] @ {time_str}{Style.RESET_ALL}")
+                                print(f"{Fore.WHITE}│ {Style.RESET_ALL}{actual_msg}")
+                                print(f"{Fore.WHITE}└{'─' * 40}{Style.RESET_ALL}")
                                 print(f"{LBLUE}[{self.username}]{Style.RESET_ALL} > ", end="", flush=True)
                             else:
                                 print()
@@ -649,6 +676,7 @@ if __name__ == "__main__":
     print(f"  /msg  <user> <text>      send a message")
     print(f"  /file <user> <path>      send a file")
     print(f"  /gmsg <group> <text>     group message")
+    print(f"  /gfile <group> <path>    send file to group")
     print(f"  /create <group>          create a group")
     print(f"  /join  <group>           join a group")
     print(f"  /add   <group> <user>    add to group")
@@ -714,6 +742,13 @@ if __name__ == "__main__":
                     client.send_group_message(parts[1], parts[2])
                 else:
                     print(f"{Fore.LIGHTRED_EX}Usage: /gmsg <group_name> <text>{Style.RESET_ALL}")
+
+            elif command.startswith("/gfile"):
+                parts = command.split(" ", 2)
+                if len(parts) == 3:
+                    client.send_group_file(parts[1], parts[2])
+                else:
+                    print(f"{Fore.LIGHTRED_EX}Usage: /gfile <group_name> <path>{Style.RESET_ALL}")
 
             elif command.startswith("/join"):
                 parts = command.split()
