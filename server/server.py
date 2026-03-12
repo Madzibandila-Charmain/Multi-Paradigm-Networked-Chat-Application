@@ -221,6 +221,10 @@ def route_message(header, body, sender_socket):
     if not sender or not receiver:
         send_message(sender_socket, ERROR, "server", sender or "unknown", "Missing FROM or TO field")
         return
+    
+    if not user_exists(receiver):
+        send_message(sender_socket, ERROR, "server", sender, f"User '{receiver}' does not exist")
+        return
 
     if is_blocked(receiver, sender):
         send_message(sender_socket, MESSAGE_FAILED, "server", sender, f"{receiver} has blocked you")
