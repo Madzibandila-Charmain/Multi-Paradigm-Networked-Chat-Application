@@ -420,8 +420,20 @@ def handle_client(client_socket, client_address):
 
             elif msg_type == JOIN_GROUP:
                 group_name = body.decode("utf-8").strip() if body else ""
+
+                if not group_exists(group_name):
+                    send_message(client_socket, ERROR, "server", username, f"Group '{group_name}' does not exist")
+                    continue
+
+                # Check if already a member
+                members = get_group_members(group_name)
+                if username in members:
+                    send_message(client_socket, ERROR, "server", username, f"You are already a member of '{group_name}'")
+                    continue
+
                 add_to_group(group_name, username)
                 send_message(client_socket, ACK, "server", username, f"Joined group '{group_name}'")
+                print(f"[GROUP] {username} joined '{group_name}'")
 
             elif msg_type == ADD_USER:
                 body_text = body.decode("utf-8").strip() if body else ""
