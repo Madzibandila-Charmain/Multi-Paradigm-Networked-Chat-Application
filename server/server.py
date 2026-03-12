@@ -438,18 +438,21 @@ def handle_client(client_socket, client_address):
 
                     # Prevent adding yourself
                     if user_to_add == username:
-                        send_message(client_socket, ERROR, "server", username, "You are already in the group as admin")
-                        continue
-                    
-                    #Check if user already in group
-                    members = get_group_members(group_name)
-
-                    if user_to_add in members:
                         send_message(client_socket, ERROR, "server", username,
-                                    f"{user_to_add} is already in '{group_name}'")
+                                    "You are already in the group as admin")
                         continue
 
-                    
+                    # Check user exists in database
+                    if not user_exists(user_to_add):
+                        send_message(client_socket, ERROR, "server", username, f"User '{user_to_add}' does not exist")
+                        continue
+
+                    # Check if user already in group
+                    members = get_group_members(group_name)
+                    if user_to_add in members:
+                        send_message(client_socket, ERROR, "server", username, f"{user_to_add} is already in '{group_name}'")
+                        continue
+
                     add_to_group(group_name, user_to_add)
 
                     # ACK to the creator
@@ -459,9 +462,12 @@ def handle_client(client_socket, client_address):
                     # Notify the added user
                     recipient_socket = get_online_client_socket(user_to_add)
                     if recipient_socket:
-                        send_message(recipient_socket, ACK, "server", user_to_add, f"You have been added to group '{group_name}' by {username}")
+                        send_message(recipient_socket, ACK, "server", user_to_add,
+                                    f"You have been added to group '{group_name}' by {username}")
                     else:
-                        save_message("server", user_to_add, ACK, f"You have been added to group '{group_name}' by {username}", get_timestamp())
+                        save_message("server", user_to_add, ACK,
+                                    f"You have been added to group '{group_name}' by {username}",
+                                    get_timestamp())
                 else:
                     send_message(client_socket, ERROR, "server", username, "Invalid ADD_USER format")
 
