@@ -191,7 +191,7 @@ class ClientHandler:
                     print(f"{Fore.LIGHTGREEN_EX}Login successful{Style.RESET_ALL}")
                     register_msg = build_tcp_message(P2P_REGISTER, self.username, "server", str(self.p2p_port))
                     self.tcp_socket.sendall(register_msg.encode())
-                    print(f"{LBLUE}P2P port {self.p2p_port} registered{Style.RESET_ALL}")
+                    print(f"{SALMON}P2P port {self.p2p_port} registered{Style.RESET_ALL}")
                     return True
 
                 elif msg_type == ERROR:
@@ -395,22 +395,21 @@ class ClientHandler:
                         print(f"{Fore.LIGHTYELLOW_EX}[FILE FAILED] {body}{Style.RESET_ALL}")
 
                     elif msg_type == ACK:
-                        print(f"{Fore.LIGHTGREEN_EX}[{time_str}] [ACK] {body}{Style.RESET_ALL}")
+                         print(f"\n{Fore.LIGHTGREEN_EX}[{time_str}] [ACK] {body}{Style.RESET_ALL}")
 
                     elif msg_type == ERROR:
-                        print(f"{Fore.LIGHTRED_EX}[{time_str}] [ERROR] {body}{Style.RESET_ALL}")
+                        print(f"\n{Fore.LIGHTRED_EX}[{time_str}] [ERROR] {body}{Style.RESET_ALL}")
 
                     elif msg_type == MESSAGE_FAILED:
-                        print(f"{Fore.LIGHTYELLOW_EX}[{time_str}] [FAILED] {body}{Style.RESET_ALL}")
+                        print(f"\n{Fore.LIGHTYELLOW_EX}[{time_str}] [FAILED] {body}{Style.RESET_ALL}")
 
                     elif msg_type == USER_ONLINE:
-                        print(f"{Fore.LIGHTGREEN_EX}[{time_str}] [+] {parsed.get('FROM', '?')} is now online{Style.RESET_ALL}")
+                        print(f"\n{Fore.LIGHTGREEN_EX}[{time_str}] [+] {parsed.get('FROM', '?')} is now online{Style.RESET_ALL}")
+                        print(f"{LBLUE}[{self.username}]{Style.RESET_ALL} > ", end="", flush=True)
 
                     elif msg_type == USER_OFFLINE:
-                        print(f"{Fore.LIGHTRED_EX}[{time_str}] [-] {parsed.get('FROM', '?')} has gone offline{Style.RESET_ALL}")
-
-                    #elif msg_type == "GROUP_ADDED":
-                        #print(f"{SALMON}[GROUP] {body}{Style.RESET_ALL}")
+                        print(f"\n{Fore.LIGHTRED_EX}[{time_str}] [-] {parsed.get('FROM', '?')} has gone offline{Style.RESET_ALL}")
+                        print(f"{LBLUE}[{self.username}]{Style.RESET_ALL} > ", end="", flush=True)
 
                     else:
                         sender = parsed.get('FROM', '?')
@@ -419,8 +418,9 @@ class ClientHandler:
                         if is_self:
                             print()
                             print(f"{Fore.LIGHTGREEN_EX}┌─ You [{time_str}]{Style.RESET_ALL}")
-                            print(f"{Fore.LIGHTGREEN_EX}│{Style.RESET_ALL} {body}")
+                            print(f"{Fore.LIGHTGREEN_EX}│ {Style.RESET_ALL}{body}")
                             print(f"{Fore.LIGHTGREEN_EX}└{'─' * 40}{Style.RESET_ALL}")
+                            print(f"{LBLUE}[{self.username}]{Style.RESET_ALL} > ", end="", flush=True)
                         else:
                             # Check if it's a group message
                             if body.startswith('[') and ']' in body:
@@ -430,12 +430,13 @@ class ClientHandler:
                                 actual_msg = body[group_end + 1:].strip()
                                 print()
                                 print(f"{SALMON}┌─ [{sender}] → [{group_name}] @ {time_str}{Style.RESET_ALL}")
-                                print(f"{SALMON}│{Style.RESET_ALL} {actual_msg}")
+                                print(f"{SALMON}│ {Style.RESET_ALL}{actual_msg}")
                                 print(f"{SALMON}└{'─' * 40}{Style.RESET_ALL}")
+                                print(f"{LBLUE}[{self.username}]{Style.RESET_ALL} > ", end="", flush=True)
                             else:
                                 print()
                                 print(f"┌─ {sender} @ {time_str}")
-                                print(f"│{body}")
+                                print(f"│ {body}")
                                 print(f"└{'─' * 40}")
                                 print(f"{LBLUE}[{self.username}]{Style.RESET_ALL} > ", end="", flush=True)
 
@@ -598,7 +599,7 @@ if __name__ == "__main__":
         print(f"{LBLUE}2. Login{Style.RESET_ALL}")
         print(f"{Fore.LIGHTRED_EX}3. Exit{Style.RESET_ALL}")
 
-        choice = input(f"\n{Fore.LIGHTYELLOW_EX}Select option (1, 2, or 3): {Style.RESET_ALL}")
+        choice = input(f"\nSelect option (1, 2, or 3): ")
 
         # Validate menu input
         if choice not in ["1", "2", "3"]:
@@ -659,6 +660,7 @@ if __name__ == "__main__":
 
     while True:
         try:
+            time.sleep(0.15)  # Brief delay to allow ACK messages to arrive before showing prompt
             command = input(f"{LBLUE}[{username}]{Style.RESET_ALL} > ")
 
             if not command.strip():
