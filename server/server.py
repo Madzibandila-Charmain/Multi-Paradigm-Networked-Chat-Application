@@ -430,14 +430,20 @@ def handle_client(client_socket, client_address):
                     group_name  = parts[0].strip()
                     user_to_add = parts[1].strip()
 
+                    # Admin check
+                    creator = get_group_creator(group_name)
+                    if creator != username:
+                        send_message(client_socket, ERROR, "server", username, "Only the group admin can add members")
+                        continue
+
                     # Prevent adding yourself
                     if user_to_add == username:
-                        send_message(client_socket, ERROR, "server", username, "You cannot add yourself to a group.")
+                        send_message(client_socket, ERROR, "server", username, "You are already in the group as admin")
                         continue
 
                     add_to_group(group_name, user_to_add)
 
-                    #Ack to the creator
+                    # ACK to the creator
                     send_message(client_socket, ACK, "server", username, f"{user_to_add} added to '{group_name}'")
                     print(f"[GROUP] {username} added {user_to_add} to '{group_name}'")
 
@@ -455,10 +461,35 @@ def handle_client(client_socket, client_address):
                 body_text = body.decode("utf-8").strip() if body else ""
                 parts = body_text.split(":", 1)
                 if len(parts) == 2:
-                    group_name = parts[0].strip()
+                    group_name     = parts[0].strip()
                     user_to_remove = parts[1].strip()
+
+                    # Admin check
+                    creator = get_group_creator(group_name)
+                    if creator != username:
+                        send_message(client_socket, ERROR, "server", username,
+                                    "Only the group admin can remove members")
+                        continue
+
+                    # Prevent removing yourself (use /leave for that)
+                    if user_to_remove == username:
+                        send_message(client_socket, ERROR, "server", username,
+                                    "You cannot remove yourself. Use /leave to exit the group")
+                        continue
+
                     remove_from_group(group_name, user_to_remove)
                     send_message(client_socket, ACK, "server", username, f"{user_to_remove} removed from '{group_name}'")
+                    print(f"[GROUP] {username} removed {user_to_remove} from '{group_name}'")
+
+                    # Notify the removed user
+                    recipient_socket = get_online_client_socket(user_to_remove)
+                    if recipient_socket:
+                        send_message(recipient_socket, ACK, "server", user_to_remove,
+                                    f"You have been removed from group '{group_name}' by {username}")
+                    else:
+                        save_message("server", user_to_remove, ACK,
+                                    f"You have been removed from group '{group_name}' by {username}",
+                                    get_timestamp())
                 else:
                     send_message(client_socket, ERROR, "server", username, "Invalid REMOVE_USER format")
 
