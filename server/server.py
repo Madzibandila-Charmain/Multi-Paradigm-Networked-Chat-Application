@@ -121,7 +121,7 @@ def receive_full_message(sock, buf):
         buf += chunk
 
     header_bytes, rest = buf.split(sep, 1)
-    header = parse_tcp_header(header_bytes.decode("utf-8"))
+    header = parse_tcp_header(header_bytes.decode("utf-8", errors="ignore"))
     if header is None:
         return None, None, bytearray()
 
