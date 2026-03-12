@@ -449,6 +449,14 @@ def handle_client(client_socket, client_address):
                 send_message(client_socket, ACK, "server", username, f"Joined group '{group_name}'")
                 print(f"[GROUP] {username} joined '{group_name}'")
 
+                # Notify existing members that someone joined
+                for member in members:
+                    sock = get_online_client_socket(member)
+                    if sock:
+                        send_message(sock, TEXT, "server", member, f"[{group_name}] {username} has joined the group")
+                    else:
+                        save_message("server", member, TEXT, f"[{group_name}] {username} has joined the group", get_timestamp())
+
             elif msg_type == ADD_USER:
                 body_text = body.decode("utf-8").strip() if body else ""
                 parts = body_text.split(":", 1)
