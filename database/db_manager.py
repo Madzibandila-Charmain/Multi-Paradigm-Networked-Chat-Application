@@ -88,6 +88,23 @@ def set_user_status(username, status):
     except Exception as e:
         print(f"[DB ERROR] set_user-status: {e}")
 
+def get_group_creator(group_name):
+    """
+    Returns the username of the user who created the group.
+    Returns None if the group does not exist or on error.
+    """
+    
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT created_by FROM groups WHERE group_name = ?", (group_name,))
+        row = cursor.fetchone()
+        conn.close()
+        return row[0] if row else None
+    except Exception as e:
+        print(f"[DB ERROR] get_group_creator: {e}")
+        return None
+
 def save_message(sender, receiver, msg_type, content, timestamp):
     """
     Stores a message for a user who is currently offline.
