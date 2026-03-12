@@ -76,7 +76,7 @@ class ClientHandler:
 
         if not username or not password:
             print(f"{Fore.RED}[ERROR] Username and password cannot be empty{Style.RESET_ALL}")
-            return False
+            return None
 
         # REGISTER message body
         body = f"password: {password}"
@@ -87,7 +87,7 @@ class ClientHandler:
             print(f"{Fore.GREEN}✓ Registration request sent{Style.RESET_ALL}")
         except Exception as e:
             print(f"{Fore.RED}[ERROR] Failed to send REGISTER: {e}{Style.RESET_ALL}")
-            return False
+            return None
 
         buffer = bytearray()
         registration_complete = False
@@ -97,7 +97,7 @@ class ClientHandler:
                 chunk = self.tcp_socket.recv(4096)
                 if not chunk:
                     print(f"{Fore.RED}[ERROR] Server closed connection{Style.RESET_ALL}")
-                    return False
+                    return None
 
                 buffer += chunk
 
@@ -124,6 +124,7 @@ class ClientHandler:
 
                         elif msg_type == "ERROR":
                             print(f"{Fore.RED}[ERROR] {message_body or 'Registration failed'}{Style.RESET_ALL}")
+                            return None
 
                         elif msg_type == "P2P_DENIED":
                             print(f"{Fore.YELLOW}>> [P2P DENIED] {message_body}{Style.RESET_ALL}")
@@ -141,7 +142,7 @@ class ClientHandler:
 
             except Exception as e:
                 print(f"{Fore.RED}[ERROR] Exception while waiting for server response: {e}{Style.RESET_ALL}")
-                return False
+                return None
 
     def login(self, username, password=""):
         self.username = username
@@ -150,11 +151,9 @@ class ClientHandler:
         self.tcp_socket.sendall(msg.encode())
         print(f"{Fore.GREEN}✓ Login request sent{Style.RESET_ALL}")
 
-        # Wait for server ACK before P2P_REGISTER
-        ack_received = False
         buffer = b""
 
-        while not ack_received:
+        while True:
             data = self.tcp_socket.recv(BUFFER_SIZE)
             if not data:
                 print(f"{Fore.RED}[ERROR] Server disconnected during login{Style.RESET_ALL}")
@@ -169,7 +168,6 @@ class ClientHandler:
 
                 header_part = buffer[:sep_index]
                 remaining = buffer[sep_index + len(HEADER_BODY_SEPARATOR):]
-
                 parsed = parse_tcp_header(header_part.decode(errors="ignore"))
                 if not parsed:
                     buffer = remaining
@@ -186,18 +184,15 @@ class ClientHandler:
                 body_text = body_bytes.decode(errors="ignore")
 
                 if msg_type == ACK:
-                    ack_received = True
-                    print(f"{Fore.GREEN}Login successful, proceeding with P2P registration{Style.RESET_ALL}")
-                    
+                    print(f"{Fore.GREEN}Login successful{Style.RESET_ALL}")
+                    register_msg = build_tcp_message(P2P_REGISTER, self.username, "server", str(self.p2p_port))
+                    self.tcp_socket.sendall(register_msg.encode())
+                    print(f"{Fore.MAGENTA}✓ P2P port {self.p2p_port} registered{Style.RESET_ALL}")
+                    return True
+
                 elif msg_type == ERROR:
                     print(f"{Fore.RED}Login failed: {body_text}{Style.RESET_ALL}")
                     return False
-
-            register_msg = build_tcp_message(P2P_REGISTER, self.username, "server", str(self.p2p_port))
-            self.tcp_socket.sendall(register_msg.encode())
-            print(f"{Fore.MAGENTA}✓ P2P port {self.p2p_port} registered{Style.RESET_ALL}")
-
-            return True
 
     def logout(self):
         try:
@@ -211,15 +206,14 @@ class ClientHandler:
         self.tcp_socket.close()
         self.udp_socket.close()
         self.p2p_server_socket.close()
-        print(f"""
-{Fore.CYAN}╔════════════════════════════════════════════════╗
-║     ██████╗░██╗░░░██╗███████╗██╗              ║
-║     ██╔══██╗╚██╗░██╔╝██╔════╝██║              ║
-║     ██████╦╝░╚████╔╝░█████╗░░██║              ║
-║     ██╔══██╗░░╚██╔╝░░██╔══╝░░╚═╝              ║
-║     ██████╦╝░░░██║░░░███████╗██╗              ║
-║     ╚═════╝░░░░╚═╝░░░╚══════╝╚═╝              ║
-╚════════════════════════════════════════════════╝{Style.RESET_ALL}
+        print(f"""{Fore.CYAN}
+        ██████╗░██╗░░░██╗███████╗██╗
+        ██╔══██╗╚██╗░██╔╝██╔════╝██║
+        ██████╦╝░╚████╔╝░█████╗░░██║
+        ██╔══██╗░░╚██╔╝░░██╔══╝░░╚═╝
+        ██████╦╝░░░██║░░░███████╗██╗
+        ╚═════╝░░░░╚═╝░░░╚══════╝╚═╝
+        {Style.RESET_ALL}
         """)
         sys.exit(0)
 
@@ -233,7 +227,7 @@ class ClientHandler:
             f"{Fore.MAGENTA}📎 Preparing to send {os.path.basename(filepath)} ({filesize} bytes) to {receiver}{Style.RESET_ALL}")
 
         # Asks the server for P2P connection
-        body = f"{os.path.basename(filepath)}\n{filesize}"
+        body = f"{os.path.basename(filepath)}\n{filepath}\n{filesize}"
 
         msg = build_tcp_message(P2P_REQUEST, self.username, receiver, body)
 
@@ -280,9 +274,9 @@ class ClientHandler:
         print(f"{Fore.YELLOW}Leaving group: {group_name}{Style.RESET_ALL}")
 
     def block_user(self, target_user):
-        msg = build_tcp_message(BLOCK_USER, self.username, target_user)
+        msg = build_tcp_message(BLOCK_USER, self.username, target_user, "")
         self.tcp_socket.sendall(msg.encode())
-        print(f"{Fore.RED}Blocking user: {target_user}{Style.RESET_ALL}")
+        print(f"{Fore.RED}Blocking user: {target_user}{Style.RESET_ALL}")   
 
     def receive_messages(self):
         buffer = b""
@@ -673,15 +667,14 @@ if __name__ == "__main__":
     #Only runs after succesful login
     client.start_threads()
 
-    print(f"""
-{Fore.CYAN}╔════════════════════════════════════════════════════════════════╗
-║  ██╗░░░░░░░██╗███████╗██╗░░░░░░█████╗░░█████╗░███╗░░░███╗███████╗  ║
-║  ██║░░██╗░░██║██╔════╝██║░░░░░██╔══██╗██╔══██╗████╗░████║██╔════╝  ║
-║  ╚██╗████╗██╔╝█████╗░░██║░░░░░██║░░╚═╝██║░░██║██╔████╔██║█████╗░░  ║
-║  ░████╔═████║░██╔══╝░░██║░░░░░██║░░██╗██║░░██║██║╚██╔╝██║██╔══╝░░  ║
-║  ░╚██╔╝░╚██╔╝░███████╗███████╗╚█████╔╝╚█████╔╝██║░╚═╝░██║███████╗  ║
-║  ░░╚═╝░░░╚═╝░░╚══════╝╚══════╝░╚════╝░░╚════╝░╚═╝░░░░░╚═╝╚══════╝  ║
-╚════════════════════════════════════════════════════════════════════╝{Style.RESET_ALL}
+    print(f"""{Fore.CYAN}
+    ██╗░░░░░░░██╗███████╗██╗░░░░░░█████╗░░█████╗░███╗░░░███╗███████╗
+    ██║░░██╗░░██║██╔════╝██║░░░░░██╔══██╗██╔══██╗████╗░████║██╔════╝
+    ╚██╗████╗██╔╝█████╗░░██║░░░░░██║░░╚═╝██║░░██║██╔████╔██║█████╗░░
+    ░████╔═████║░██╔══╝░░██║░░░░░██║░░██╗██║░░██║██║╚██╔╝██║██╔══╝░░
+    ░╚██╔╝░╚██╔╝░███████╗███████╗╚█████╔╝╚█████╔╝██║░╚═╝░██║███████╗
+    ░░╚═╝░░░╚═╝░░╚══════╝╚══════╝░╚════╝░░╚════╝░╚═╝░░░░░╚═╝╚══════╝
+    {Style.RESET_ALL}
     """)
     print(f"  {Fore.GREEN}logged in as: {Fore.YELLOW}{username}{Style.RESET_ALL}")
     print()
