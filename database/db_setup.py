@@ -80,6 +80,9 @@ def create_tables():
     """)
     print("[DB] Table 'blocked_users' ready")
 
+    connection.commit()
+    connection.close()
+
 if __name__ == "__main__":
     create_tables()
     print("\n[DB] Database ready. Users can now register through the application.")
