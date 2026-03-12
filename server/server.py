@@ -10,6 +10,9 @@ import time
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from colorama import init, Fore, Style
+init()
+
 from constants import *
 from utils.message import *
 from database.db_manager import *
@@ -43,8 +46,8 @@ def is_online(username):
     """
     with online_clients_lock:
         return username in online_clients
-    
-#p2p_info helpers
+
+# p2p_info helpers
 def register_p2p(username, ip, port):
     """
     Store the IP and P2P listen port for a client after login.
@@ -73,7 +76,7 @@ def send_message(sock, msg_type, sender, receiver, body=""):
         sock.sendall((build_tcp_message(msg_type, sender, receiver, body)).encode("utf-8"))
         return True
     except Exception as e:
-        print(f"[ERROR] Failed to send {msg_type} to {receiver}: {e}")
+        print(f"{Fore.LIGHTRED_EX}[ERROR] Failed to send {msg_type} to {receiver}: {e}{Style.RESET_ALL}")
         return False
 
 def send_file(sock, msg_type, sender, receiver, filename, file_data):
@@ -96,7 +99,7 @@ def send_file(sock, msg_type, sender, receiver, filename, file_data):
         sock.sendall(header.encode("utf-8") + file_data)
         return True
     except Exception as e:
-        print(f"[ERROR] Failed to send file to {receiver}: {e}")
+        print(f"{Fore.LIGHTRED_EX}[ERROR] Failed to send file to {receiver}: {e}{Style.RESET_ALL}")
         return False
 
 def receive_full_message(sock, buf):
@@ -150,7 +153,7 @@ def deliver_offline_messages(username, client_socket):
     for msg in messages:
         send_message(client_socket, msg["msg_type"], msg["sender"], username, msg["content"])
         mark_delivered(msg["message_id"])
-    print(f"[OFFLINE] Delivered {len(messages)} stored messages to {username}")
+    print(f"{Fore.LIGHTGREEN_EX}[OFFLINE] Delivered {len(messages)} stored messages to {username}{Style.RESET_ALL}")
 
 def handle_login(client_socket, client_address, header, body):
     """
@@ -169,7 +172,7 @@ def handle_login(client_socket, client_address, header, body):
         send_message(client_socket, ERROR, "server", username, "Invalid credentials")
         return None
 
-    print(f"[LOGIN] {username} logged in from {client_address}")
+    print(f"{Fore.LIGHTGREEN_EX}[LOGIN] {username} logged in from {client_address}{Style.RESET_ALL}")
     add_online_client(username, client_socket)
     set_user_status(username, "online")
     broadcast_status(username, USER_ONLINE)
@@ -190,7 +193,7 @@ def handle_logout(username):
     remove_p2p(username)
     broadcast_status(username, USER_OFFLINE)
     set_user_status(username, "offline")
-    print(f"[LOGOUT] {username} disconnected")
+    print(f"{Fore.LIGHTYELLOW_EX}[LOGOUT] {username} disconnected{Style.RESET_ALL}")
 
 def broadcast_status(username, status_type):
     """
@@ -204,7 +207,7 @@ def broadcast_status(username, status_type):
         try:
             sock.sendall(build_tcp_message(status_type, username, recipient, "").encode("utf-8"))
         except Exception as e:
-            print(f"[ERROR] Could not send {status_type} to {recipient}: {e}")
+            print(f"{Fore.LIGHTRED_EX}[ERROR] Could not send {status_type} to {recipient}: {e}{Style.RESET_ALL}")
 
 def route_message(header, body, sender_socket):
     """
@@ -221,7 +224,7 @@ def route_message(header, body, sender_socket):
     if not sender or not receiver:
         send_message(sender_socket, ERROR, "server", sender or "unknown", "Missing FROM or TO field")
         return
-    
+
     if not user_exists(receiver):
         send_message(sender_socket, ERROR, "server", sender, f"User '{receiver}' does not exist")
         return
@@ -243,7 +246,7 @@ def route_message(header, body, sender_socket):
 
         if success:
             send_message(sender_socket, ACK, "server", sender, f"Message delivered to {receiver}")
-            print(f"[ROUTE] {msg_type} from {sender} to {receiver} delivered")
+            print(f"{Fore.LIGHTGREEN_EX}[ROUTE] {msg_type} from {sender} to {receiver} delivered{Style.RESET_ALL}")
         else:
             send_message(sender_socket, MESSAGE_FAILED, "server", sender, f"Could not deliver to {receiver}")
     else:
@@ -256,12 +259,12 @@ def route_message(header, body, sender_socket):
         if msg_type in (IMAGE, VIDEO_FILE, AUDIO_FILE, DOCUMENT):
             send_message(sender_socket, MESSAGE_FAILED, "server", sender,
                          f"{receiver} is offline. File transfers require the recipient to be online.")
-            print(f"[FILE REJECTED] {msg_type} from {sender} -> {receiver} (offline)")
+            print(f"{Fore.LIGHTRED_EX}[FILE REJECTED] {msg_type} from {sender} -> {receiver} (offline){Style.RESET_ALL}")
         else:
             body_text = body.decode("utf-8") if body else ""
             save_message(sender, receiver, msg_type, body_text, get_timestamp())
             send_message(sender_socket, ACK, "server", sender, f"{receiver} is offline. Message stored.")
-            print(f"[STORE] {receiver} offline. Message from {sender} stored")
+            print(f"{Fore.LIGHTYELLOW_EX}[STORE] {receiver} offline. Message from {sender} stored{Style.RESET_ALL}")
 
 def route_group_message(header, body, sender_socket):
     """
@@ -298,7 +301,7 @@ def route_group_message(header, body, sender_socket):
             save_message(sender, member, TEXT, f"[{group_name}] {body_text}", get_timestamp())
 
     send_message(sender_socket, ACK, "server", sender, f"Group message sent to {delivered} member(s)")
-    print(f"[GROUP] {sender} sent message to group '{group_name}'")
+    print(f"{Fore.LIGHTGREEN_EX}[GROUP] {sender} sent message to group '{group_name}'{Style.RESET_ALL}")
 
 
 def handle_p2p_register(username, client_socket, body):
@@ -311,7 +314,7 @@ def handle_p2p_register(username, client_socket, body):
         ip       = client_socket.getpeername()[0]
         register_p2p(username, ip, p2p_port)
         send_message(client_socket, ACK, "server", username, f"P2P registered on {ip}:{p2p_port}")
-        print(f"[P2P] {username} registered at {ip}:{p2p_port}")
+        print(f"{Fore.LIGHTGREEN_EX}[P2P] {username} registered at {ip}:{p2p_port}{Style.RESET_ALL}")
     except Exception as e:
         send_message(client_socket, ERROR, "server", username, f"P2P registration failed: {e}")
 
@@ -344,9 +347,10 @@ def handle_p2p_request(username, client_socket, header, body):
     peer_sock = get_online_client_socket(receiver)
 
     if not peer_info or not peer_sock:
-        # server routing cannot store binary files for offline delivery either.
-        # New message tells the sender exactly what they need to do.
-        send_message(client_socket, P2P_DENIED, "server", username, f"{receiver} is offline. File transfers require the recipient to be online.")
+        # Server routing cannot store binary files for offline delivery either.
+        # This message tells the sender exactly what they need to do.
+        send_message(client_socket, P2P_DENIED, "server", username,
+                     f"{receiver} is offline. File transfers require the recipient to be online.")
         return
 
     peer_ip, peer_port = peer_info
@@ -360,7 +364,7 @@ def handle_p2p_request(username, client_socket, header, body):
     send_message(peer_sock, P2P_INCOMING, "server", receiver,
                  f"IP: {sender_ip}\nUsername: {username}\nFilename: {filename}\nFilesize: {filesize}")
 
-    print(f"[P2P] Signalled {username} -> {receiver} ({filename})")
+    print(f"{Fore.LIGHTGREEN_EX}[P2P] Signalled {username} -> {receiver} ({filename}){Style.RESET_ALL}")
 
 
 def handle_client(client_socket, client_address):
@@ -378,7 +382,7 @@ def handle_client(client_socket, client_address):
             header, body, buf = receive_full_message(client_socket, buf)
 
             if header is None:
-                print(f"[DISCONNECT] {username or client_address} lost connection")
+                print(f"{Fore.LIGHTRED_EX}[DISCONNECT] {username or client_address} lost connection{Style.RESET_ALL}")
                 break
 
             msg_type = header.get(FIELD_TYPE)
@@ -391,14 +395,14 @@ def handle_client(client_socket, client_address):
                     send_message(client_socket, ERROR, "server", "unknown", "Username and password required")
                 elif register_user(username_reg, password_reg):
                     send_message(client_socket, ACK, "server", username_reg, "Registration successful. You can now log in.")
-                    print(f"[REGISTER] New user '{username_reg}' registered")
+                    print(f"{Fore.LIGHTGREEN_EX}[REGISTER] New user '{username_reg}' registered{Style.RESET_ALL}")
                 else:
                     send_message(client_socket, ERROR, "server", username_reg, "Username already taken")
 
             elif msg_type == LOGIN:
                 username = handle_login(client_socket, client_address, header, body)
                 if username is None:
-                    continue
+                    continue  # failed login keeps the connection alive so the client can try again
 
             elif msg_type == LOGOUT:
                 send_message(client_socket, ACK, "server", username, "Logged out")
@@ -422,13 +426,14 @@ def handle_client(client_socket, client_address):
                 target = header.get(FIELD_TO)
                 block_user(username, target)
                 send_message(client_socket, ACK, "server", username, f"{target} has been blocked")
-                print(f"[BLOCK] {username} blocked {target}")
+                print(f"{Fore.LIGHTGREEN_EX}[BLOCK] {username} blocked {target}{Style.RESET_ALL}")
 
             elif msg_type == CREATE_GROUP:
                 group_name = body.decode("utf-8").strip() if body else ""
                 success = create_group(group_name, username)
                 if success:
                     send_message(client_socket, ACK, "server", username, f"Group '{group_name}' created")
+                    print(f"{Fore.LIGHTGREEN_EX}[GROUP] '{group_name}' created by {username}{Style.RESET_ALL}")
                 else:
                     send_message(client_socket, ERROR, "server", username, f"Group '{group_name}' already exists")
 
@@ -447,7 +452,7 @@ def handle_client(client_socket, client_address):
 
                 add_to_group(group_name, username)
                 send_message(client_socket, ACK, "server", username, f"Joined group '{group_name}'")
-                print(f"[GROUP] {username} joined '{group_name}'")
+                print(f"{Fore.LIGHTGREEN_EX}[GROUP] {username} joined '{group_name}'{Style.RESET_ALL}")
 
                 # Notify existing members that someone joined
                 for member in members:
@@ -491,7 +496,7 @@ def handle_client(client_socket, client_address):
 
                     # ACK to the creator
                     send_message(client_socket, ACK, "server", username, f"{user_to_add} added to '{group_name}'")
-                    print(f"[GROUP] {username} added {user_to_add} to '{group_name}'")
+                    print(f"{Fore.LIGHTGREEN_EX}[GROUP] {username} added {user_to_add} to '{group_name}'{Style.RESET_ALL}")
 
                     # Notify the added user
                     recipient_socket = get_online_client_socket(user_to_add)
@@ -501,7 +506,6 @@ def handle_client(client_socket, client_address):
                         save_message("server", user_to_add, ACK, f"You have been added to group '{group_name}' by {username}", get_timestamp())
                 else:
                     send_message(client_socket, ERROR, "server", username, "Invalid ADD_USER format")
-
 
             elif msg_type == REMOVE_USER:
                 body_text = body.decode("utf-8").strip() if body else ""
@@ -525,7 +529,7 @@ def handle_client(client_socket, client_address):
 
                     remove_from_group(group_name, user_to_remove)
                     send_message(client_socket, ACK, "server", username, f"{user_to_remove} removed from '{group_name}'")
-                    print(f"[GROUP] {username} removed {user_to_remove} from '{group_name}'")
+                    print(f"{Fore.LIGHTYELLOW_EX}[GROUP] {username} removed {user_to_remove} from '{group_name}'{Style.RESET_ALL}")
 
                     # Notify the removed user
                     recipient_socket = get_online_client_socket(user_to_remove)
@@ -541,17 +545,17 @@ def handle_client(client_socket, client_address):
 
             elif msg_type == EXIT_GROUP:
                 group_name = body.decode("utf-8").strip() if body else ""
-                
+
                 # Get members BEFORE removing so we can notify them
                 members = get_group_members(group_name)
-                
-                creator = get_group_creator(group_name)
+
+                creator  = get_group_creator(group_name)
                 is_admin = (username == creator)
                 leave_notice = f"{'[ADMIN] ' if is_admin else ''}{username} has left the group"
-                
+
                 remove_from_group(group_name, username)
                 send_message(client_socket, ACK, "server", username, f"Left group '{group_name}'")
-                
+
                 # Notify all remaining members
                 for member in members:
                     if member == username:
@@ -561,15 +565,15 @@ def handle_client(client_socket, client_address):
                         send_message(sock, TEXT, "server", member, f"[{group_name}] {leave_notice}")
                     else:
                         save_message("server", member, TEXT, f"[{group_name}] {leave_notice}", get_timestamp())
-                
-                print(f"[GROUP] {username} left '{group_name}'")
+
+                print(f"{Fore.LIGHTYELLOW_EX}[GROUP] {username} left '{group_name}'{Style.RESET_ALL}")
 
             else:
-                print(f"[WARN] Unknown message type: {msg_type}")
+                print(f"{Fore.LIGHTYELLOW_EX}[WARN] Unknown message type: {msg_type}{Style.RESET_ALL}")
                 send_message(client_socket, ERROR, "server", username or "unknown", f"Unknown message type: {msg_type}")
 
     except Exception as e:
-        print(f"[ERROR] handle_client crashed for {username}: {e}")
+        print(f"{Fore.LIGHTRED_EX}[ERROR] handle_client crashed for {username}: {e}{Style.RESET_ALL}")
 
     finally:
         handle_logout(username)
@@ -586,7 +590,7 @@ def start_server():
     server_socket.bind((HOST, TCP_PORT))
     server_socket.listen(MAX_CLIENTS)
 
-    print(f"[SERVER] Listening on {HOST}:{TCP_PORT}")
+    print(f"{Fore.LIGHTGREEN_EX}[SERVER] Listening on {HOST}:{TCP_PORT}{Style.RESET_ALL}")
     print(f"[SERVER] Waiting for connections... (Ctrl+C to stop)")
 
     try:
@@ -597,7 +601,7 @@ def start_server():
             print(f"[SERVER] Active connections: {threading.active_count() - 1}")
 
     except KeyboardInterrupt:
-        print("\n[SERVER] Shutting down")
+        print(f"\n{Fore.LIGHTYELLOW_EX}[SERVER] Shutting down{Style.RESET_ALL}")
     finally:
         server_socket.close()
 
