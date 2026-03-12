@@ -16,7 +16,9 @@ def get_connection():
     Opena and reutrns a connection to the database.
     check_same_thread=False is requiredbecuase multiple server threads will call these functions at the same time.
     """
-    return sqlite3.connect(DB_NAME, check_same_thread=False, timeout = 10)
+    conn = sqlite3.connect(DB_NAME, check_same_thread=False, timeout = 10)
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn
 
 def hash_password(password):
     """
