@@ -279,12 +279,17 @@ def route_group_message(header, body, sender_socket):
         send_message(sender_socket, ERROR, "server", sender, f"Group '{group_name}' not found or empty")
         return
 
+    # Non-members cannot send messages to the group
+    if sender not in members:
+        send_message(sender_socket, ERROR, "server", sender, f"You are not a member of '{group_name}'")
+        return
+
     delivered = 0
     for member in members:
         if member == sender:
             continue
         if is_blocked(member, sender):
-            continue  # skip silently, don't deliver to this member
+            continue
         sock = get_online_client_socket(member)
         if sock:
             send_message(sock, TEXT, sender, member, f"[{group_name}] {body_text}")
@@ -322,6 +327,11 @@ def handle_p2p_request(username, client_socket, header, body):
     Body format: <filename>\\n<filepath>\\n<filesize>
     """
     receiver = header.get(FIELD_TO)
+
+    if not user_exists(receiver):
+        send_message(client_socket, P2P_DENIED, "server", username, f"User '{receiver}' does not exist")
+        return
+
     try:
         parts    = body.decode("utf-8").strip().split("\n")
         filename = parts[0] if len(parts) > 0 else "file"
@@ -523,8 +533,28 @@ def handle_client(client_socket, client_address):
 
             elif msg_type == EXIT_GROUP:
                 group_name = body.decode("utf-8").strip() if body else ""
+                
+                # Get members BEFORE removing so we can notify them
+                members = get_group_members(group_name)
+                
+                creator = get_group_creator(group_name)
+                is_admin = (username == creator)
+                leave_notice = f"{'[ADMIN] ' if is_admin else ''}{username} has left the group"
+                
                 remove_from_group(group_name, username)
                 send_message(client_socket, ACK, "server", username, f"Left group '{group_name}'")
+                
+                # Notify all remaining members
+                for member in members:
+                    if member == username:
+                        continue
+                    sock = get_online_client_socket(member)
+                    if sock:
+                        send_message(sock, TEXT, "server", member, f"[{group_name}] {leave_notice}")
+                    else:
+                        save_message("server", member, TEXT, f"[{group_name}] {leave_notice}", get_timestamp())
+                
+                print(f"[GROUP] {username} left '{group_name}'")
 
             else:
                 print(f"[WARN] Unknown message type: {msg_type}")
