@@ -440,7 +440,16 @@ def handle_client(client_socket, client_address):
                     if user_to_add == username:
                         send_message(client_socket, ERROR, "server", username, "You are already in the group as admin")
                         continue
+                    
+                    #Check if user already in group
+                    members = get_group_members(group_name)
 
+                    if user_to_add in members:
+                        send_message(client_socket, ERROR, "server", username,
+                                    f"{user_to_add} is already in '{group_name}'")
+                        continue
+
+                    
                     add_to_group(group_name, user_to_add)
 
                     # ACK to the creator
