@@ -37,7 +37,6 @@ from constants import (
     P2P_REGISTER, P2P_REQUEST
 )
 
-
 class ClientHandler:
 
     def __init__(self):
@@ -72,8 +71,8 @@ class ClientHandler:
 
     def register(self):
 
-        username = input(f"{Fore.CYAN}Enter new username: {Style.RESET_ALL}").strip()
-        password = input(f"{Fore.CYAN}Enter password: {Style.RESET_ALL}").strip()
+        username = input(f"\n{Fore.CYAN}Enter new username: {Style.RESET_ALL}").strip()
+        password = input(f"\n{Fore.CYAN}Enter password: {Style.RESET_ALL}").strip()
 
         if not username or not password:
             print(f"{Fore.RED}[ERROR] Username and password cannot be empty{Style.RESET_ALL}")
@@ -151,12 +150,54 @@ class ClientHandler:
         self.tcp_socket.sendall(msg.encode())
         print(f"{Fore.GREEN}✓ Login request sent{Style.RESET_ALL}")
 
-        # Registers P2P listening port
-        time.sleep(0.5)
+        # Wait for server ACK before P2P_REGISTER
+        ack_received = False
+        buffer = b""
 
-        register_msg = build_tcp_message(P2P_REGISTER, self.username, "server", str(self.p2p_port))
-        self.tcp_socket.sendall(register_msg.encode())
-        print(f"{Fore.MAGENTA}✓ P2P port {self.p2p_port} registered{Style.RESET_ALL}")
+        while not ack_received:
+            data = self.tcp_socket.recv(BUFFER_SIZE)
+            if not data:
+                print(f"{Fore.RED}[ERROR] Server disconnected during login{Style.RESET_ALL}")
+                return False
+
+            buffer += data
+
+            while True:
+                sep_index = buffer.find(HEADER_BODY_SEPARATOR.encode())
+                if sep_index == -1:
+                    break
+
+                header_part = buffer[:sep_index]
+                remaining = buffer[sep_index + len(HEADER_BODY_SEPARATOR):]
+
+                parsed = parse_tcp_header(header_part.decode(errors="ignore"))
+                if not parsed:
+                    buffer = remaining
+                    continue
+
+                msg_type = parsed.get(FIELD_TYPE)
+                size = int(parsed.get(FIELD_SIZE, 0))
+
+                if len(remaining) < size:
+                    break
+
+                body_bytes = remaining[:size]
+                buffer = remaining[size:]
+                body_text = body_bytes.decode(errors="ignore")
+
+                if msg_type == ACK:
+                    ack_received = True
+                    print(f"{Fore.GREEN}Login successful, proceeding with P2P registration{Style.RESET_ALL}")
+                    
+                elif msg_type == ERROR:
+                    print(f"{Fore.RED}Login failed: {body_text}{Style.RESET_ALL}")
+                    return False
+
+            register_msg = build_tcp_message(P2P_REGISTER, self.username, "server", str(self.p2p_port))
+            self.tcp_socket.sendall(register_msg.encode())
+            print(f"{Fore.MAGENTA}✓ P2P port {self.p2p_port} registered{Style.RESET_ALL}")
+
+            return True
 
     def logout(self):
         try:
@@ -164,6 +205,7 @@ class ClientHandler:
             self.tcp_socket.sendall(msg.encode())
         except:
             pass
+
         self.keep_running = False
         time.sleep(0.5)
         self.tcp_socket.close()
@@ -191,7 +233,7 @@ class ClientHandler:
             f"{Fore.MAGENTA}📎 Preparing to send {os.path.basename(filepath)} ({filesize} bytes) to {receiver}{Style.RESET_ALL}")
 
         # Asks the server for P2P connection
-        body = f"{os.path.basename(filepath)}\n{filepath}\n{filesize}"
+        body = f"{os.path.basename(filepath)}\n{filesize}"
 
         msg = build_tcp_message(P2P_REQUEST, self.username, receiver, body)
 
@@ -248,6 +290,7 @@ class ClientHandler:
 
                 if not data:
                     print(f"{Fore.RED}[SERVER DISCONNECTED]{Style.RESET_ALL}")
+                    self.keep_running = False  # stop threads
                     break
 
                 buffer += data
@@ -292,7 +335,7 @@ class ClientHandler:
 
                     if msg_type in (IMAGE, VIDEO_FILE, AUDIO_FILE, DOCUMENT):
                         filename = parsed.get('FILENAME', 'unknown')
-                        print(f"\n{Fore.MAGENTA}[{time_str}] Receiving file: {filename}{Style.RESET_ALL}")
+                        print(f"{Fore.MAGENTA}[{time_str}] Receiving file: {filename}{Style.RESET_ALL}")
                         receive_file(parsed, body_bytes)
 
                     elif msg_type == "P2P_SIGNAL":
@@ -309,7 +352,7 @@ class ClientHandler:
                             continue
 
                         print(
-                            f"\n{Fore.CYAN}[P2P] Direct connection ready with {Fore.GREEN}{peer_username}{Fore.CYAN} at {peer_ip}:{peer_port}{Style.RESET_ALL}")
+                            f"{Fore.CYAN}[P2P] Direct connection ready with {Fore.GREEN}{peer_username}{Fore.CYAN} at {peer_ip}:{peer_port}{Style.RESET_ALL}")
 
                         # Opens the P2P connection and sends the file
                         try:
@@ -362,10 +405,10 @@ class ClientHandler:
                             continue
 
                         print(
-                            f"\n{Fore.CYAN}[P2P] {Fore.GREEN}{peer_username}{Fore.CYAN} is sending you file: {Fore.YELLOW}{filename}{Style.RESET_ALL}")
+                            f"{Fore.CYAN}[P2P] {Fore.GREEN}{peer_username}{Fore.CYAN} is sending you file: {Fore.YELLOW}{filename}{Style.RESET_ALL}")
 
                     elif msg_type == "P2P_DENIED":
-                        print(f"\n{Fore.YELLOW}[FILE FAILED] {body}{Style.RESET_ALL}")
+                        print(f"{Fore.YELLOW}[FILE FAILED] {body}{Style.RESET_ALL}")
 
                     elif msg_type == ACK:
                         print(f"{Fore.GREEN}>> [{time_str}] [ACK] {body}{Style.RESET_ALL}")
@@ -378,18 +421,19 @@ class ClientHandler:
 
                     elif msg_type == USER_ONLINE:
                         print(
-                            f"\n{Fore.GREEN}[{time_str}] [+] {Fore.CYAN}{parsed.get('FROM', '?')}{Fore.GREEN} is now online{Style.RESET_ALL}")
+                            f"{Fore.GREEN}[{time_str}] [+] {Fore.CYAN}{parsed.get('FROM', '?')}{Fore.GREEN} is now online{Style.RESET_ALL}")
 
                     elif msg_type == USER_OFFLINE:
                         print(
-                            f"\n{Fore.RED}[{time_str}] [-] {Fore.CYAN}{parsed.get('FROM', '?')}{Fore.RED} has gone offline{Style.RESET_ALL}")
+                            f"{Fore.RED}[{time_str}] [-] {Fore.CYAN}{parsed.get('FROM', '?')}{Fore.RED} has gone offline{Style.RESET_ALL}")
 
                     else:
                         sender = parsed.get('FROM', '?')
                         is_self = (sender == self.username)
 
                         if is_self:
-                            print(f"\n{Fore.GREEN}┌─ You [{time_str}]{Style.RESET_ALL}")
+                            print()
+                            print(f"{Fore.GREEN}┌─ You [{time_str}]{Style.RESET_ALL}")
                             print(f"{Fore.GREEN}│{Style.RESET_ALL} {body}")
                             print(f"{Fore.GREEN}└{'─' * 40}{Style.RESET_ALL}")
                         else:
@@ -399,11 +443,13 @@ class ClientHandler:
                                 group_end = body.find(']')
                                 group_name = body[1:group_end]
                                 actual_msg = body[group_end + 1:].strip()
-                                print(f"\n{Fore.MAGENTA}┌─ [{sender}] → [{group_name}] @ {time_str}{Style.RESET_ALL}")
+                                print()
+                                print(f"{Fore.MAGENTA}┌─ [{sender}] → [{group_name}] @ {time_str}{Style.RESET_ALL}")
                                 print(f"{Fore.MAGENTA}│{Style.RESET_ALL} {actual_msg}")
                                 print(f"{Fore.MAGENTA}└{'─' * 40}{Style.RESET_ALL}")
                             else:
-                                print(f"\n{Fore.CYAN}┌─ {sender} @ {time_str}{Style.RESET_ALL}")
+                                print()
+                                print(f"{Fore.CYAN}┌─ {sender} @ {time_str}{Style.RESET_ALL}")
                                 print(f"{Fore.CYAN}│{Style.RESET_ALL} {body}")
                                 print(f"{Fore.CYAN}└{'─' * 40}{Style.RESET_ALL}")
 
@@ -411,7 +457,8 @@ class ClientHandler:
                 if self.keep_running:
                     error_msg = str(e)
 
-                    print(f"\n{Fore.RED}┌─[ERROR] NETWORK EXCEPTION")
+                    print()
+                    print(f"{Fore.RED}┌─[ERROR] NETWORK EXCEPTION")
                     print(f"│ {error_msg}")
                     print(f"└{'─' * len(error_msg)}{Style.RESET_ALL}\n")
 
@@ -423,22 +470,69 @@ class ClientHandler:
                 conn, addr = self.p2p_server_socket.accept()
                 print(f"{Fore.CYAN}[P2P] Incoming connection from {addr}{Style.RESET_ALL}")
 
-                header_data = b""
-                while HEADER_BODY_SEPARATOR.encode() not in header_data:
-                    header_data += conn.recv(1)
+                threading.Thread(
+                    target=self.handle_p2p_transfer,
+                    args=(conn, addr),
+                    daemon=True
+                ).start()
 
-                header_part = header_data.split(HEADER_BODY_SEPARATOR.encode())[0]
-                parsed = parse_tcp_header(header_part.decode())
-                size = int(parsed.get(FIELD_SIZE, 0))
-
-                file_bytes = b""
-                while len(file_bytes) < size:
-                    file_bytes += conn.recv(BUFFER_SIZE)
-
-                receive_file(parsed, file_bytes)
-                conn.close()
-            except:
+            except Exception as e:
+                if self.keep_running:
+                    print(f"{Fore.RED}[P2P ERROR] {e}{Style.RESET_ALL}")
                 break
+
+    def handle_p2p_transfer(self, conn, addr):
+        try:
+
+            buffer = b""
+
+            # Read header
+            while HEADER_BODY_SEPARATOR.encode() not in buffer:
+                chunk = conn.recv(BUFFER_SIZE)
+
+                if not chunk:
+                    conn.close()
+                    return
+
+                buffer += chunk
+
+            header_part, remaining = buffer.split(HEADER_BODY_SEPARATOR.encode(), 1)
+            parsed = parse_tcp_header(header_part.decode())
+
+            filename = parsed.get("FILENAME", "unknown_file")
+            size = int(parsed.get(FIELD_SIZE, 0))
+
+            print(f"{Fore.MAGENTA}[P2P] Receiving file: {filename} ({size} bytes){Style.RESET_ALL}")
+
+            os.makedirs(MEDIA_DIR, exist_ok=True)
+            save_path = os.path.join(MEDIA_DIR, filename)
+
+            received = len(remaining)
+
+            # Write initial leftover bytes
+            with open(save_path, "wb") as f:
+
+                if remaining:
+                    f.write(remaining)
+
+                # Stream remaining file data
+                while received < size:
+
+                    chunk = conn.recv(BUFFER_SIZE)
+
+                    if not chunk:
+                        break
+
+                    f.write(chunk)
+                    received += len(chunk)
+
+            print(f"{Fore.GREEN}[P2P RECEIVED] {filename}{Style.RESET_ALL}")
+
+            conn.close()
+
+        except Exception as e:
+            print(f"{Fore.RED}[P2P TRANSFER ERROR] {e}{Style.RESET_ALL}")
+            conn.close()
 
     def receive_udp(self):
         while self.keep_running:
@@ -452,34 +546,19 @@ class ClientHandler:
                 sender = parsed.get("FROM")
 
                 if msg_type == TYPING:
-                    # Display typing indicator above current input
-                    self._print_above_input(f"{Fore.WHITE}{Back.BLUE} {sender} is typing... {Style.RESET_ALL}")
-                    threading.Thread(target=self._clear_typing_indicator, args=(sender,)).start()
-
+                    print(f"{Fore.WHITE}{Back.BLUE} {sender} is typing... {Style.RESET_ALL}")
+                    
                 elif msg_type == KEEP_ALIVE:
+                    # Ignore keep-alive messages
                     pass
 
                 else:
-                    self._print_above_input(f"{Fore.YELLOW}[UDP] {msg_type} from {sender}{Style.RESET_ALL}")
-            except:
+                    print(f"{Fore.YELLOW}[UDP] {msg_type} from {sender}{Style.RESET_ALL}")
+
+            except Exception as e:
+                if self.keep_running:
+                    print(f"{Fore.RED}[UDP ERROR] {e}{Style.RESET_ALL}")
                 break
-
-    # Helper to print above the current input line
-    def _print_above_input(self, message):
-        # Move cursor to new line
-        sys.stdout.write("\n")
-        sys.stdout.flush()
-        print(message)
-        # Reprint input prompt
-        sys.stdout.write(">> ")
-        sys.stdout.flush()
-
-    # temporary typing indicator removal
-    def _clear_typing_indicator(self, sender, delay=3):
-        time.sleep(delay)
-        # Just reprint the prompt to "clear" the typing indicator
-        sys.stdout.write("\r>> ")
-        sys.stdout.flush()
 
     def send_typing(self, receiver):
         msg = build_udp_message(TYPING, self.username, receiver)
@@ -536,24 +615,55 @@ if __name__ == "__main__":
     client = ClientHandler()
     client.connect()
 
-    print(f"{Fore.CYAN}1. Register{Style.RESET_ALL}")
-    print(f"{Fore.GREEN}2. Login{Style.RESET_ALL}")
+    while True:
 
-    choice = input(f"{Fore.YELLOW}Select option: {Style.RESET_ALL}")
+        print(f"\n{Fore.CYAN}1. Register{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}2. Login{Style.RESET_ALL}")
+        print(f"{Fore.RED}3. Exit{Style.RESET_ALL}")
 
-    if choice == "1":
-        registered_username = client.register()
-        if not registered_username:
-            print(f"{Fore.RED}Registration failed. Exiting.{Style.RESET_ALL}")
-            sys.exit(1)
-        print(f"{Fore.GREEN}You can now log in with your new credentials.{Style.RESET_ALL}")
-        username = registered_username
-        password = input(f"{Fore.CYAN}Enter password: {Style.RESET_ALL}").strip()
-    else:
-        username = input(f"{Fore.CYAN}Enter username: {Style.RESET_ALL}").strip()
-        password = input(f"{Fore.CYAN}Enter password: {Style.RESET_ALL}").strip()
+        choice = input(f"\n{Fore.YELLOW}Select option (1, 2, or 3): {Style.RESET_ALL}")
 
-    client.login(username, password)
+        # Validate menu input
+        if choice not in ["1", "2", "3"]:
+            print(f"{Fore.RED}Invalid option. Please select 1(Register), 2(Login), or 3(Exit).{Style.RESET_ALL}")
+            continue
+
+        if choice == "3":
+            print(f"{Fore.YELLOW}Exiting client...{Style.RESET_ALL}")
+            sys.exit(0)
+
+        if choice == "1":
+            registered_username = client.register()
+
+            if not registered_username:
+                print(f"{Fore.RED}Registration failed. Please try again.{Style.RESET_ALL}")
+                continue
+
+            print(f"{Fore.GREEN}You can now log in with your new credentials.{Style.RESET_ALL}")
+            username = registered_username
+            password = input(f"\n{Fore.CYAN}Enter password: {Style.RESET_ALL}").strip()
+
+            login_success = client.login(username, password)
+            if not login_success:
+                print(f"{Fore.RED}Login failed. Returning to main menu.{Style.RESET_ALL}")
+                continue
+
+            break
+
+        elif choice == "2":
+
+            username = input(f"{Fore.CYAN}Enter username: {Style.RESET_ALL}").strip()
+            password = input(f"{Fore.CYAN}Enter password: {Style.RESET_ALL}").strip()
+
+            login_success = client.login(username, password)
+
+            if not login_success:
+                print(f"{Fore.RED}Login failed. Please try again.{Style.RESET_ALL}")
+                continue
+
+            break
+
+    #Only runs after succesful login
     client.start_threads()
 
     print(f"""
@@ -581,7 +691,7 @@ if __name__ == "__main__":
 
     while True:
         try:
-            command = input(f"{Fore.GREEN}>>{Style.RESET_ALL} ")
+            command = input(f"\n{Fore.GREEN}>>{Style.RESET_ALL} ")
 
             if not command.strip():
                 continue
