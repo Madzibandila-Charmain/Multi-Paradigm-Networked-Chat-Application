@@ -435,7 +435,7 @@ def handle_client(client_socket, client_address):
             elif msg_type in [TEXT, IMAGE, VIDEO_FILE, AUDIO_FILE, DOCUMENT]:
                 route_message(header, body, client_socket)
 
-            elif msg_type == "GROUP_MSG":
+            elif msg_type in ("GROUP_MSG", "GROUP_FILE"):
                 route_group_message(header, body, client_socket)
 
             elif msg_type == BLOCK_USER:
