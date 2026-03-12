@@ -462,12 +462,9 @@ def handle_client(client_socket, client_address):
                     # Notify the added user
                     recipient_socket = get_online_client_socket(user_to_add)
                     if recipient_socket:
-                        send_message(recipient_socket, ACK, "server", user_to_add,
-                                    f"You have been added to group '{group_name}' by {username}")
+                        send_message(recipient_socket, ACK, "server", user_to_add, f"You have been added to group '{group_name}' by {username}")
                     else:
-                        save_message("server", user_to_add, ACK,
-                                    f"You have been added to group '{group_name}' by {username}",
-                                    get_timestamp())
+                        save_message("server", user_to_add, ACK, f"You have been added to group '{group_name}' by {username}", get_timestamp())
                 else:
                     send_message(client_socket, ERROR, "server", username, "Invalid ADD_USER format")
 
