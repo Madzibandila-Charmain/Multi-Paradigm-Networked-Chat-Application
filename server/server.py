@@ -268,13 +268,15 @@ def route_message(header, body, sender_socket):
 
 def route_group_message(header, body, sender_socket):
     """
-    Routes a message to all members of a group.
-    Sends to every online member except the sender.
-    Stores for offline members.
+    Routes a text message or binary file to all members of a group.
+    Files are forwarded only to online members - binary data cannot be
+    stored in SQLite so offline members are skipped and the sender is told.
+    Text messages still use store-and-forward for offline members as normal.
     """
     sender     = header.get(FIELD_FROM)
     group_name = header.get(FIELD_TO)
-    body_text  = body.decode("utf-8") if body else ""
+    msg_type   = header.get(FIELD_TYPE)
+    is_file    = msg_type in (IMAGE, VIDEO_FILE, AUDIO_FILE, DOCUMENT)
 
     members = get_group_members(group_name)
 
@@ -282,27 +284,41 @@ def route_group_message(header, body, sender_socket):
         send_message(sender_socket, ERROR, "server", sender, f"Group '{group_name}' not found or empty")
         return
 
-    # Non-members cannot send messages to the group
     if sender not in members:
         send_message(sender_socket, ERROR, "server", sender, f"You are not a member of '{group_name}'")
         return
 
     delivered = 0
+    skipped   = 0
+    filename  = header.get("FILENAME", f"file_{get_timestamp()}")
+
     for member in members:
         if member == sender:
             continue
         if is_blocked(member, sender):
             continue
+
         sock = get_online_client_socket(member)
         if sock:
-            send_message(sock, TEXT, sender, member, f"[{group_name}] {body_text}")
+            if is_file:
+                send_file(sock, msg_type, sender, member, filename, body)
+            else:
+                body_text = body.decode("utf-8") if body else ""
+                send_message(sock, TEXT, sender, member, f"[{group_name}] {body_text}")
             delivered += 1
         else:
-            save_message(sender, member, TEXT, f"[{group_name}] {body_text}", get_timestamp())
+            if is_file:
+                skipped += 1
+            else:
+                body_text = body.decode("utf-8") if body else ""
+                save_message(sender, member, TEXT, f"[{group_name}] {body_text}", get_timestamp())
 
-    send_message(sender_socket, ACK, "server", sender, f"Group message sent to {delivered} member(s)")
-    print(f"{Fore.LIGHTGREEN_EX}[GROUP] {sender} sent message to group '{group_name}'{Style.RESET_ALL}")
-
+    ack_text = f"Group {'file' if is_file else 'message'} sent to {delivered} member(s)"
+    if skipped:
+        ack_text += f" ({skipped} offline member(s) skipped - files require recipients to be online)"
+    send_message(sender_socket, ACK, "server", sender, ack_text)
+    print(f"{Fore.LIGHTGREEN_EX}[GROUP] {sender} sent {msg_type} to group '{group_name}' "
+          f"({delivered} delivered, {skipped} skipped){Style.RESET_ALL}")
 
 def handle_p2p_register(username, client_socket, body):
     """
