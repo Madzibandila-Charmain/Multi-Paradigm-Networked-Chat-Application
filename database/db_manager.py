@@ -186,6 +186,21 @@ def create_group(group_name, creator_username):
         print(f"[DB ERROR] create_group: {e}")
         return False
 
+def group_exists(group_name):
+    """
+    Returns True if the group exists in the database, False otherwise.
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1 FROM groups WHERE group_name = ?", (group_name,))
+        row = cursor.fetchone()
+        conn.close()
+        return row is not None
+    except Exception as e:
+        print(f"[DB ERROR] group_exists: {e}")
+        return False
+
 def add_to_group(group_name, username):
     """
     Adds a user to an existing group.
