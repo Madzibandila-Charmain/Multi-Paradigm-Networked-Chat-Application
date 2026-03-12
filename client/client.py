@@ -276,7 +276,39 @@ class ClientHandler:
     def block_user(self, target_user):
         msg = build_tcp_message(BLOCK_USER, self.username, target_user, "")
         self.tcp_socket.sendall(msg.encode())
-        print(f"{Fore.RED}Blocking user: {target_user}{Style.RESET_ALL}")   
+        print(f"{Fore.RED}Blocking user: {target_user}{Style.RESET_ALL}")  
+
+    def _do_p2p_send(self, peer_ip, peer_port, peer_username, filename, filepath):
+        try:
+            p2p_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            p2p_socket.connect((peer_ip, peer_port))
+
+            file_type = detect_file_type(filename)
+            size      = os.path.getsize(filepath)
+
+            header = (
+                f"TYPE: {file_type}{HEADER_FIELD_SEPARATOR}"
+                f"FROM: {self.username}{HEADER_FIELD_SEPARATOR}"
+                f"TO: {peer_username}{HEADER_FIELD_SEPARATOR}"
+                f"TIMESTAMP: {get_timestamp()}{HEADER_FIELD_SEPARATOR}"
+                f"FILENAME: {filename}{HEADER_FIELD_SEPARATOR}"
+                f"SIZE: {size}"
+                f"{HEADER_BODY_SEPARATOR}"
+            )
+            p2p_socket.sendall(header.encode())
+
+            with open(filepath, "rb") as f:
+                while True:
+                    chunk = f.read(BUFFER_SIZE)
+                    if not chunk:
+                        break
+                    p2p_socket.sendall(chunk)
+
+            p2p_socket.close()
+            print(f"{Fore.GREEN}[P2P SENT] {filename}{Style.RESET_ALL}")
+
+        except Exception as e:
+            print(f"{Fore.RED}[P2P ERROR] {e}{Style.RESET_ALL}") 
 
     def receive_messages(self):
         buffer = b""
@@ -337,58 +369,19 @@ class ClientHandler:
 
                     elif msg_type == "P2P_SIGNAL":
                         lines = body.split("\n")
-
                         try:
-                            peer_ip = lines[0].split(": ")[1]
-                            peer_port = int(lines[1].split(": ", 1)[1])
+                            peer_ip       = lines[0].split(": ", 1)[1]
+                            peer_port     = int(lines[1].split(": ", 1)[1])
                             peer_username = lines[2].split(": ", 1)[1]
-                            filename = lines[3].split(": ", 1)[1]
-                            filepath = lines[4].split(": ", 1)[1]
+                            filename      = lines[3].split(": ", 1)[1]
+                            filepath      = lines[4].split(": ", 1)[1]
                         except Exception:
                             print(f"{Fore.RED}[P2P ERROR] Malformed P2P_SIGNAL message{Style.RESET_ALL}")
                             continue
 
-                        print(
-                            f"{Fore.CYAN}[P2P] Direct connection ready with {Fore.GREEN}{peer_username}{Fore.CYAN} at {peer_ip}:{peer_port}{Style.RESET_ALL}")
+                        print(f"{Fore.CYAN}[P2P] Direct connection ready with {Fore.GREEN}{peer_username}{Fore.CYAN} at {peer_ip}:{peer_port}{Style.RESET_ALL}")
 
-                        # Opens the P2P connection and sends the file
-                        try:
-
-                            p2p_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-                            p2p_socket.connect((peer_ip, peer_port))
-
-                            file_type = detect_file_type(filename)
-                            size = os.path.getsize(filepath)
-
-                            header = (
-                                f"TYPE: {file_type}{HEADER_FIELD_SEPARATOR}"
-                                f"FROM: {self.username}{HEADER_FIELD_SEPARATOR}"
-                                f"TO: {peer_username}{HEADER_FIELD_SEPARATOR}"
-                                f"TIMESTAMP: {get_timestamp()}{HEADER_FIELD_SEPARATOR}"
-                                f"FILENAME: {filename}{HEADER_FIELD_SEPARATOR}"
-                                f"SIZE: {size}"
-                                f"{HEADER_BODY_SEPARATOR}"
-                            )
-
-                            p2p_socket.sendall(header.encode())
-
-                            # Stream file in chunks
-                            with open(filepath, "rb") as f:
-                                while True:
-                                    chunk = f.read(BUFFER_SIZE)
-
-                                    if not chunk:
-                                        break
-
-                                    p2p_socket.sendall(chunk)
-
-                            p2p_socket.close()
-
-                            print(f"{Fore.GREEN}[P2P SENT] {filename}{Style.RESET_ALL}")
-
-                        except Exception as e:
-                            print(f"{Fore.RED}[P2P ERROR] {e}{Style.RESET_ALL}")
+                        threading.Thread(target=self._do_p2p_send, args=(peer_ip, peer_port, peer_username, filename, filepath), daemon=True).start()
 
                     elif msg_type == "P2P_INCOMING":
                         lines = body.split("\n")
@@ -424,9 +417,9 @@ class ClientHandler:
                         print(
                             f"{Fore.RED}[{time_str}] [-] {Fore.CYAN}{parsed.get('FROM', '?')}{Fore.RED} has gone offline{Style.RESET_ALL}")
                         
-                    elif msg_type == "GROUP_ADDED":
-                        print(
-                            f"{Fore.MAGENTA}[GROUP] {body}{Style.RESET_ALL}")
+                    #elif msg_type == "GROUP_ADDED":
+                        #print(
+                            #f"{Fore.MAGENTA}[GROUP] {body}{Style.RESET_ALL}")
 
                     else:
                         sender = parsed.get('FROM', '?')
@@ -684,6 +677,7 @@ if __name__ == "__main__":
     print(f"  {Fore.MAGENTA}/create <group>          create a group{Style.RESET_ALL}")
     print(f"  {Fore.MAGENTA}/join  <group>           join a group{Style.RESET_ALL}")
     print(f"  {Fore.MAGENTA}/add   <group> <user>    add to group{Style.RESET_ALL}")
+    print(f"  {Fore.MAGENTA}/remove <group> <user>   remove from group{Style.RESET_ALL}")
     print(f"  {Fore.MAGENTA}/leave <group>           leave a group{Style.RESET_ALL}")
     print(f"  {Fore.RED}/block <user>            block a user{Style.RESET_ALL}")
     print(f"  {Fore.YELLOW}/exit                    quit{Style.RESET_ALL}")
@@ -731,6 +725,13 @@ if __name__ == "__main__":
                 else:
                     print(f"{Fore.RED}Usage: /add <group_name> <username>{Style.RESET_ALL}")
 
+            elif command.startswith("/remove"):
+                parts = command.split()
+                if len(parts) == 3:
+                    client.remove_user(parts[1], parts[2])
+                else:
+                    print(f"{Fore.RED}Usage: /remove <group_name> <username>{Style.RESET_ALL}")
+
             elif command.startswith("/gmsg"):
                 parts = command.split(" ", 2)
                 if len(parts) == 3:
@@ -756,9 +757,8 @@ if __name__ == "__main__":
                 client.logout()
 
             else:
-                print(
-                    f"{Fore.RED}Unknown command. Type /msg, /gmsg, /file, /block, /create, /add, /join, /leave, or /exit{Style.RESET_ALL}")
-
+                print(f"{Fore.RED}Unknown command. Type /msg, /gmsg, /file, /block, /create, /add, /remove, /join, /leave, or /exit{Style.RESET_ALL}")
+                
         except KeyboardInterrupt:
             print(f"\n{Fore.YELLOW}Logging out...{Style.RESET_ALL}")
             client.logout()
