@@ -16,6 +16,7 @@ init()
 from constants import *
 from utils.message import *
 from database.db_manager import *
+from client.file_transfer import detect_file_type
 
 online_clients = {}
 online_clients_lock = threading.Lock()
@@ -233,6 +234,10 @@ def route_message(header, body, sender_socket):
         send_message(sender_socket, MESSAGE_FAILED, "server", sender, f"{receiver} has blocked you")
         return
 
+    if is_blocked(sender, receiver):
+        send_message(sender_socket, MESSAGE_FAILED, "server", sender, f"You have blocked {receiver}. Unblock them to send messages.")
+        return
+
     recipient_socket = get_online_client_socket(receiver)
 
     if recipient_socket:
@@ -293,7 +298,6 @@ def route_group_message(header, body, sender_socket):
     filename  = header.get("FILENAME", f"file_{get_timestamp()}")
 
     if is_file:
-        from client.file_transfer import detect_file_type
         file_type = detect_file_type(filename)
     else:
         file_type = msg_type
@@ -613,7 +617,7 @@ def start_server():
     server_socket.listen(MAX_CLIENTS)
 
     print(f"{Fore.LIGHTGREEN_EX}[SERVER] Listening on {HOST}:{TCP_PORT}{Style.RESET_ALL}")
-    print(f"[SERVER] Waiting for connections... (Ctrl+C to stop)")
+    print(f"[SERVER] Waiting for connections...")
 
     try:
         while True:
