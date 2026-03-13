@@ -17,12 +17,11 @@ import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from constants import (
-    HOST, UDP_PORT, BUFFER_SIZE,
-    TYPING, KEEP_ALIVE,
-    FIELD_TYPE, FIELD_FROM, FIELD_TO
-)
-from utils.message import parse_udp_message, build_tcp_message
+from colorama import init, Fore, Style
+init()
+
+from constants import *
+from utils.message import *
 
 # Shared client registry from the TCP server
 from server.server import online_clients, online_clients_lock
@@ -30,6 +29,11 @@ from server.server import online_clients, online_clients_lock
 # Using a set instead of a list because checking membership is faster
 # KEEP_ALIVE is excluded - it's for server monitoring, not client-to-client forwarding
 RELAY_TYPES = {TYPING}
+
+def _dim(text):
+    """Helper: wrap text in dim grey styling."""
+    return f"{Style.DIM}{Fore.WHITE}{text}{Style.RESET_ALL}"
+ 
 
 def forward_typing(msg_type, sender, receiver):
     """
@@ -41,15 +45,14 @@ def forward_typing(msg_type, sender, receiver):
         recipient_socket = online_clients.get(receiver, None)
 
     if recipient_socket is None:
-        print(f"[UDP RELAY] {receiver} offline - {msg_type} from {sender} dropped")
-        return
+        print(_dim(f"[UDP RELAY] {receiver} offline - {msg_type} from {sender} dropped"))
 
     try:
         message = build_tcp_message(msg_type, sender, receiver, "")
         recipient_socket.sendall(message.encode("utf-8"))
-        print(f"[UDP RELAY] {msg_type} from {sender} forwarded to {receiver}")
+        print(_dim(f"[UDP RELAY] {msg_type} from {sender} forwarded to {receiver}"))
     except Exception as e:
-        print(f"[UDP RELAY ERROR] Could not forward to {receiver}: {e}")
+        print(f"{Fore.LIGHTRED_EX}[UDP RELAY ERROR] Could not forward to {receiver}: {e}{Style.RESET_ALL}")
 
 def start_udp_relay():
     """
@@ -69,7 +72,7 @@ def start_udp_relay():
     udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     udp_socket.bind((HOST, UDP_PORT))
 
-    print(f"[UDP RELAY] Listening on {HOST}:{UDP_PORT}")
+    print(_dim(f"[UDP RELAY] Listening on {HOST}:{UDP_PORT}"))
 
     while True:
         try:
@@ -78,7 +81,7 @@ def start_udp_relay():
             parsed = parse_udp_message(raw_message)
 
             if parsed is None:
-                print(f"[UDP RELAY] Malformed message from {sender_address}, dropped")
+                print(_dim(f"[UDP RELAY] Malformed message from {sender_address}, dropped"))
                 continue
 
             msg_type = parsed.get(FIELD_TYPE)
@@ -86,23 +89,23 @@ def start_udp_relay():
             receiver = parsed.get(FIELD_TO)
 
             if not msg_type or not sender or not receiver:
-                print(f"[UDP RELAY] Incomplete message from {sender_address}, dropped")
+                print(_dim(f"[UDP RELAY] Incomplete message from {sender_address}, dropped"))
                 continue
 
             if msg_type == KEEP_ALIVE:
                 # Expected - client heartbeat to keep NAT maaping alive.
-                print(f"[UDP RELAY] KEEP_ALIVE from {sender} (dropped as expected)")
+                print(_dim(f"[UDP RELAY] KEEP_ALIVE from {sender} (dropped as expected)"))
                 continue
 
             if msg_type in RELAY_TYPES:
-                print(f"[UDP RELAY] Received {msg_type} from {sender} for {receiver}")
+                print(_dim(f"[UDP RELAY] Received {msg_type} from {sender} for {receiver}"))
                 forward_typing(msg_type, sender, receiver)
             else:
-                print(f"[UDP RELAY] Unexpected message type {msg_type}, dropped")
+                print(_dim(f"[UDP RELAY] Unexpected message type {msg_type}, dropped"))
 
         except Exception as e:
             # Print the error and keep going - never let one bad message stop the relay
-            print(f"[UDP RELAY ERROR] {e}")
+            print(f"{Fore.LIGHTRED_EX}[UDP RELAY ERROR] {e}{Style.RESET_ALL}")
             continue
 
 

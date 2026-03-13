@@ -16,7 +16,6 @@ from datetime import datetime
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# patch receive_messages so GUI can intercept incoming data
 from client.client import ClientHandler
 from constants import (
     ACK, ERROR, MESSAGE_FAILED, TEXT, IMAGE, VIDEO_FILE,
@@ -50,12 +49,12 @@ FONT_TITLE   = ("Courier New", 18, "bold")
 FONT_MONO    = ("Courier New", 12)
 
 
-#  Llogin window
+# Login window
 class LoginWindow(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("CSC3002F Chat")
-        self.geometry("420x520")
+        self.geometry("420x580")
         self.resizable(False, False)
         self.configure(fg_color=DARK_BG)
 
@@ -105,19 +104,30 @@ class LoginWindow(ctk.CTk):
         self.password_entry.pack(fill="x", pady=(4, 0))
         self.password_entry.bind("<Return>", lambda e: self._do_login())
 
-        #status label
+        # status label
         self.status_label = ctk.CTkLabel(
             form, text="", font=FONT_SMALL, text_color=TEXT_MUTED
         )
         self.status_label.pack(pady=(10, 0))
 
-        # button for logging in
+        # login button
         self.login_btn = ctk.CTkButton(
             form, text="CONNECT →", height=44, font=("Courier New", 13, "bold"),
             fg_color=ACCENT, hover_color=ACCENT_HOVER,
             command=self._do_login
         )
         self.login_btn.pack(fill="x", pady=(20, 0))
+
+        # register button
+        self.register_btn = ctk.CTkButton(
+            form, text="CREATE ACCOUNT", height=36,
+            font=("Courier New", 12),
+            fg_color="transparent", hover_color=INPUT_BG,
+            border_width=1, border_color=BORDER,
+            text_color=TEXT_MUTED,
+            command=self._do_register
+        )
+        self.register_btn.pack(fill="x", pady=(10, 0))
 
         # footer
         ctk.CTkLabel(
@@ -156,6 +166,77 @@ class LoginWindow(ctk.CTk):
 
         threading.Thread(target=attempt, daemon=True).start()
 
+    def _do_register(self):
+        username = self.username_entry.get().strip()
+        password = self.password_entry.get().strip()
+
+        if not username or not password:
+            self._set_status("⚠ username and password required", WARNING)
+            return
+
+        self.register_btn.configure(state="disabled", text="registering...")
+        self._set_status("creating account...", TEXT_MUTED)
+
+        def attempt():
+            try:
+                client = ClientHandler()
+                client.connect()
+
+                # send REGISTER message manually (same as client.register but with given credentials)
+                from constants import HEADER_BODY_SEPARATOR
+                body = f"password: {password}"
+                msg = build_tcp_message(
+                    msg_type="REGISTER", sender=username,
+                    receiver="server", body=body
+                )
+                client.tcp_socket.sendall(msg.encode("utf-8"))
+
+                # wait for ACK or ERROR
+                buffer = bytearray()
+                success = False
+                while True:
+                    chunk = client.tcp_socket.recv(4096)
+                    if not chunk:
+                        break
+                    buffer += chunk
+                    if HEADER_BODY_SEPARATOR.encode("utf-8") in buffer:
+                        header_bytes, rest = buffer.split(
+                            HEADER_BODY_SEPARATOR.encode("utf-8"), 1
+                        )
+                        header = parse_tcp_header(header_bytes.decode("utf-8"))
+                        msg_type = header.get("TYPE")
+                        body_size = int(header.get("SIZE", 0))
+                        body_bytes = bytes(rest[:body_size])
+                        message_body = body_bytes.decode("utf-8") if body_bytes else ""
+
+                        if msg_type == "ACK":
+                            success = True
+                            break
+                        elif msg_type == "ERROR":
+                            self.after(0, lambda m=message_body: self._on_register_fail(m))
+                            client.tcp_socket.close()
+                            return
+
+                if success:
+                    # auto login after successful register
+                    login_success = client.login(username, password)
+                    if login_success:
+                        self.client = client
+                        self.after(0, self._on_login_success)
+                    else:
+                        self.after(0, lambda: self._on_register_fail("Registered but login failed"))
+                else:
+                    self.after(0, lambda: self._on_register_fail("Registration failed"))
+
+            except Exception as e:
+                self.after(0, lambda: self._on_register_fail(str(e)))
+
+        threading.Thread(target=attempt, daemon=True).start()
+
+    def _on_register_fail(self, err):
+        self._set_status(f"✗ {err}", DANGER)
+        self.register_btn.configure(state="normal", text="CREATE ACCOUNT")
+
     def _on_login_success(self):
         self.withdraw()
         app = ChatApp(self.client)
@@ -166,16 +247,17 @@ class LoginWindow(ctk.CTk):
         self._set_status(f"✗ {err}", DANGER)
         self.login_btn.configure(state="normal", text="CONNECT →")
 
-#  Main chat app
+
+# Main chat app
 class ChatApp(ctk.CTk):
     def __init__(self, client: ClientHandler):
         super().__init__()
         self.client = client
         self.username = client.username
-        self.current_chat = None      # username or group name currently open
+        self.current_chat = None
         self.online_users = set()
-        self.chat_histories = {}      # {name: [(sender, text, timestamp), ...]}
-        self.unread = {}              # {name: count}
+        self.chat_histories = {}
+        self.unread = {}
 
         self.title(f"CSC3002F Chat  —  {self.username}")
         self.geometry("1100x720")
@@ -184,14 +266,12 @@ class ChatApp(ctk.CTk):
 
         self._build_ui()
         self._start_receive_thread()
-        # Start only UDP, keep-alive, and P2P threads (NOT TCP - we handle that in GUI)
         self.client.udp_thread()
         self.client.keep_alive_thread()
         self.client.start_p2p_thread()
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
-    # Ui
     def _build_ui(self):
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -207,7 +287,7 @@ class ChatApp(ctk.CTk):
         sidebar.grid_propagate(False)
         sidebar.grid_rowconfigure(3, weight=1)
 
-        # ── user badge ──
+        # user badge
         badge = ctk.CTkFrame(sidebar, fg_color=PANEL_BG, corner_radius=0)
         badge.grid(row=0, column=0, sticky="ew", padx=0, pady=0)
         ctk.CTkLabel(
@@ -219,7 +299,7 @@ class ChatApp(ctk.CTk):
             font=FONT_SMALL, text_color=SUCCESS
         ).pack(side="right", padx=14)
 
-        #search
+        # search
         search_frame = ctk.CTkFrame(sidebar, fg_color="transparent")
         search_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=(10, 4))
         self.search_var = tk.StringVar()
@@ -231,7 +311,7 @@ class ChatApp(ctk.CTk):
             text_color=TEXT_PRIMARY, font=FONT_SMALL
         ).pack(fill="x")
 
-        # ── section label ──
+        # section label
         ctk.CTkLabel(
             sidebar, text="CONVERSATIONS", font=("Courier New", 10),
             text_color=TEXT_MUTED
@@ -242,16 +322,16 @@ class ChatApp(ctk.CTk):
             sidebar, fg_color="transparent", scrollbar_button_color=BORDER
         )
         self.conv_frame.grid(row=3, column=0, sticky="nsew", padx=0, pady=0)
-        self.conv_buttons = {}   # {name: CTkButton}
+        self.conv_buttons = {}
 
-        #bottom buttons
+        # bottom buttons
         bottom = ctk.CTkFrame(sidebar, fg_color=PANEL_BG, corner_radius=0)
         bottom.grid(row=4, column=0, sticky="ew")
         for text, cmd in [
-            ("＋ New Chat", self._open_new_chat_dialog),
-            ("⊞ Group", self._open_group_dialog),
-            ("⊘ Block", self._open_block_dialog),
-            ("⏻ Logout", self._on_close),
+            ("＋ New Chat",  self._open_new_chat_dialog),
+            ("⊞ Group",     self._open_group_dialog),
+            ("⊘ Block",     self._open_block_dialog),
+            ("⏻ Logout",    self._on_close),
         ]:
             ctk.CTkButton(
                 bottom, text=text, height=34, font=FONT_SMALL,
@@ -268,7 +348,7 @@ class ChatApp(ctk.CTk):
         panel.grid_rowconfigure(1, weight=1)
         panel.grid_columnconfigure(0, weight=1)
 
-        #chat header
+        # chat header
         self.chat_header = ctk.CTkFrame(
             panel, fg_color=PANEL_BG, height=52, corner_radius=0
         )
@@ -286,7 +366,6 @@ class ChatApp(ctk.CTk):
         )
         self.status_dot.pack(side="left")
 
-        # file send button in header
         self.file_btn = ctk.CTkButton(
             self.chat_header, text="⊕ file", width=80, height=30,
             font=FONT_SMALL, fg_color="transparent",
@@ -309,7 +388,7 @@ class ChatApp(ctk.CTk):
         )
         self.typing_label.grid(row=2, column=0, sticky="w", padx=18)
 
-        # ── input row ──
+        # input row
         input_row = ctk.CTkFrame(panel, fg_color=PANEL_BG, corner_radius=0)
         input_row.grid(row=3, column=0, sticky="ew")
         input_row.grid_columnconfigure(0, weight=1)
@@ -342,7 +421,6 @@ class ChatApp(ctk.CTk):
             justify="center"
         ).pack(expand=True, pady=120)
 
-    #convo list
     def _add_or_update_conversation(self, name):
         if name in self.conv_buttons:
             self._refresh_conv_button(name)
@@ -363,8 +441,10 @@ class ChatApp(ctk.CTk):
     def _conv_label(self, name):
         unread = self.unread.get(name, 0)
         suffix = f"  [{unread}]" if unread > 0 else ""
+        display = name[4:] if name.startswith("grp:") else name
         online = "● " if name in self.online_users else "○ "
-        return f"{online}{name}{suffix}"
+        prefix = "# " if name.startswith("grp:") else online
+        return f"{prefix}{display}{suffix}"
 
     def _refresh_conv_button(self, name):
         if name in self.conv_buttons:
@@ -382,24 +462,25 @@ class ChatApp(ctk.CTk):
             else:
                 btn.pack_forget()
 
-    # oppen chat
     def _open_chat(self, name):
         self.current_chat = name
         self.unread[name] = 0
 
-        # update header
-        self.header_label.configure(text=name, text_color=TEXT_PRIMARY)
-        online = name in self.online_users
-        self.status_dot.configure(
-            text="● online" if online else "○ offline",
-            text_color=SUCCESS if online else TEXT_MUTED
-        )
+        display = name[4:] if name.startswith("grp:") else name
+        self.header_label.configure(text=display, text_color=TEXT_PRIMARY)
 
-        # highlight selected
+        if name.startswith("grp:"):
+            self.status_dot.configure(text="# group", text_color=ACCENT)
+        else:
+            online = name in self.online_users
+            self.status_dot.configure(
+                text="● online" if online else "○ offline",
+                text_color=SUCCESS if online else TEXT_MUTED
+            )
+
         for n in self.conv_buttons:
             self._refresh_conv_button(n)
 
-        # render messages
         self._render_messages(name)
 
     def _render_messages(self, name):
@@ -417,7 +498,6 @@ class ChatApp(ctk.CTk):
         for sender, text, ts in history:
             self._render_bubble(sender, text, ts)
 
-        # scroll to bottom
         self.after(50, lambda: self.msg_area._parent_canvas.yview_moveto(1.0))
 
     def _render_bubble(self, sender, text, ts):
@@ -461,7 +541,6 @@ class ChatApp(ctk.CTk):
             self.unread[chat_name] = self.unread.get(chat_name, 0) + 1
             self._add_or_update_conversation(chat_name)
 
-    # send
     def _send_message(self):
         if not self.current_chat:
             messagebox.showinfo("No chat", "Open a conversation first.")
@@ -470,7 +549,6 @@ class ChatApp(ctk.CTk):
         if not text:
             return
 
-        # check if it's a group (group names stored with grp prefix logic — just use name)
         if self.current_chat.startswith("grp:"):
             group = self.current_chat[4:]
             self.client.send_group_message(group, text)
@@ -491,9 +569,9 @@ class ChatApp(ctk.CTk):
         path = filedialog.askopenfilename(
             title="Select file",
             filetypes=[
-                ("Images", "*.jpg *.jpeg *.png *.gif *.bmp *.webp"),
-                ("Videos", "*.mp4 *.avi *.mov *.mkv"),
-                ("Audio",  "*.mp3 *.wav *.ogg *.m4a"),
+                ("Images",    "*.jpg *.jpeg *.png *.gif *.bmp *.webp"),
+                ("Videos",    "*.mp4 *.avi *.mov *.mkv"),
+                ("Audio",     "*.mp3 *.wav *.ogg *.m4a"),
                 ("Documents", "*.pdf *.docx *.doc *.xlsx *.txt *.pptx"),
                 ("All files", "*.*"),
             ]
@@ -507,7 +585,8 @@ class ChatApp(ctk.CTk):
         ).start()
         fname = os.path.basename(path)
         self._append_message(
-            self.current_chat, self.username, f"📎 {fname}", datetime.now().strftime("%H:%M")
+            self.current_chat, self.username,
+            f"📎 {fname}", datetime.now().strftime("%H:%M")
         )
 
     def _on_typing(self, event):
@@ -517,9 +596,7 @@ class ChatApp(ctk.CTk):
             except Exception:
                 pass
 
-    # REceive thread
     def _start_receive_thread(self):
-        """Custom receive loop that feeds messages into the GUI."""
         from constants import BUFFER_SIZE, HEADER_BODY_SEPARATOR
 
         def loop():
@@ -565,11 +642,11 @@ class ChatApp(ctk.CTk):
         threading.Thread(target=loop, daemon=True).start()
 
     def _handle_incoming(self, header, body, body_bytes, msg_type):
+        import re
         sender = header.get(FIELD_FROM, "?")
         ts = datetime.now().strftime("%H:%M")
 
         if msg_type == ACK:
-            # show small status feedbackdon't pollute chat
             self._flash_status(f"✓ {body}")
 
         elif msg_type == ERROR:
@@ -579,18 +656,15 @@ class ChatApp(ctk.CTk):
             self._flash_status(f"⚠ {body}", WARNING)
 
         elif msg_type == TEXT:
-            # Check if it's a group message (has [groupname] prefix from server)
-            import re
+            # server sends group messages as TEXT with body [groupname] text
             group_match = re.match(r'^\[(.+?)\]\s*(.*)', body)
             if group_match:
-                # Group message
-                group_name = group_match.group(1)
+                group_name   = group_match.group(1)
                 message_text = group_match.group(2)
                 chat = f"grp:{group_name}"
                 self._add_or_update_conversation(chat)
                 self._append_message(chat, sender, message_text, ts)
             else:
-                # Direct message
                 chat = sender
                 self._add_or_update_conversation(chat)
                 self._append_message(chat, sender, body, ts)
@@ -620,7 +694,6 @@ class ChatApp(ctk.CTk):
             self.after(2000, lambda: self.typing_label.configure(text=""))
 
         elif msg_type == "P2P_SIGNAL":
-            # Server has approved P2P transfer, extract peer info and initiate send
             try:
                 lines = body.split("\n")
                 peer_ip       = lines[0].split(": ", 1)[1]
@@ -629,7 +702,6 @@ class ChatApp(ctk.CTk):
                 filename      = lines[3].split(": ", 1)[1]
                 filepath      = lines[4].split(": ", 1)[1]
 
-                # Start P2P file transfer in background thread
                 threading.Thread(
                     target=self.client._do_p2p_send,
                     args=(peer_ip, peer_port, peer_username, filename, filepath),
@@ -640,13 +712,10 @@ class ChatApp(ctk.CTk):
                 self._flash_status(f"✗ P2P transfer failed: {e}", DANGER)
 
         elif msg_type == "P2P_INCOMING":
-            # Peer is about to send us a file via P2P
             try:
                 lines = body.split("\n")
-                peer_ip   = lines[0].split(": ", 1)[1]
                 sender_user = lines[1].split(": ", 1)[1]
-                filename  = lines[2].split(": ", 1)[1]
-                filesize  = lines[3].split(": ", 1)[1]
+                filename    = lines[2].split(": ", 1)[1]
                 self._flash_status(f"📥 Receiving {filename} from {sender_user}...")
             except Exception as e:
                 self._flash_status(f"✗ Failed to parse P2P incoming: {e}", DANGER)
@@ -658,7 +727,6 @@ class ChatApp(ctk.CTk):
         self.typing_label.configure(text=msg, text_color=color)
         self.after(2500, lambda: self.typing_label.configure(text="", text_color=TEXT_MUTED))
 
-    # dialogs
     def _open_new_chat_dialog(self):
         dialog = ctk.CTkInputDialog(
             text="Enter username to chat with:",
@@ -685,7 +753,6 @@ class ChatApp(ctk.CTk):
             ("Join Group",   "group name", self._do_join_group),
             ("Leave Group",  "group name", self._do_leave_group),
         ]
-        entries = {}
         for label, ph, cmd in sections:
             frame = ctk.CTkFrame(win, fg_color=PANEL_BG, corner_radius=8)
             frame.pack(fill="x", padx=20, pady=6)
@@ -694,7 +761,6 @@ class ChatApp(ctk.CTk):
             e = ctk.CTkEntry(frame, placeholder_text=ph, fg_color=INPUT_BG,
                              border_color=BORDER, text_color=TEXT_PRIMARY, font=FONT_MONO)
             e.pack(fill="x", padx=12, pady=(0, 6))
-            entries[label] = e
             ctk.CTkButton(
                 frame, text=label, height=32, font=FONT_SMALL,
                 fg_color=ACCENT, hover_color=ACCENT_HOVER,
@@ -717,7 +783,10 @@ class ChatApp(ctk.CTk):
         ctk.CTkButton(
             add_frame, text="Add User", height=32, font=FONT_SMALL,
             fg_color=ACCENT, hover_color=ACCENT_HOVER,
-            command=lambda: (self.client.add_user(grp_e.get().strip(), usr_e.get().strip()), win.destroy())
+            command=lambda: (
+                self.client.add_user(grp_e.get().strip(), usr_e.get().strip()),
+                win.destroy()
+            )
         ).pack(fill="x", padx=12, pady=(0, 10))
 
     def _do_create_group(self, name):
@@ -748,11 +817,10 @@ class ChatApp(ctk.CTk):
             self.client.block_user(name.strip())
             self._flash_status(f"✓ {name.strip()} blocked", WARNING)
 
-    # close
     def _on_close(self):
         try:
             self.client.logout()
-        except (socket.error, Exception):
+        except Exception:
             pass
         self.destroy()
 

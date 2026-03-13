@@ -14,6 +14,11 @@ from colorama import init, Fore, Back, Style
 
 init()  # Initialize colorama (automatically resets on Windows)
 
+# Custom ANSI colors not available in colorama's built-in palette
+SALMON = "\033[38;5;209m"   # salmon pink  — file, group, P2P operations
+LBLUE  = "\033[38;5;117m"   # light blue   — prompts, info, incoming messages, help menu
+CYAN   = "\033[38;5;51m" 
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from constants import (
@@ -60,23 +65,23 @@ class ClientHandler:
     def connect(self):
         try:
             self.tcp_socket.connect((HOST, TCP_PORT))
-            print(f"{Fore.GREEN}=== SERVER HANDSHAKE COMPLETE ==={Style.RESET_ALL}")
-            print(f"{Fore.CYAN}Connected to server at {Fore.YELLOW}{HOST}:{TCP_PORT}{Style.RESET_ALL}")
-            print(f"{Fore.WHITE}Communication channel open.{Style.RESET_ALL}")
+            print(f"=== SERVER HANDSHAKE COMPLETE ===")
+            print(f"{LBLUE}Connected to server at {HOST}:{TCP_PORT}{Style.RESET_ALL}")
+            print(f"Communication channel open.")
         except Exception as e:
-            print(f"{Fore.RED}=== CONNECTION FAILED ==={Style.RESET_ALL}")
-            print(f"{Fore.YELLOW}Unable to establish connection to server.{Style.RESET_ALL}")
-            print(f"{Fore.YELLOW}Please verify server availability.{Style.RESET_ALL}")
+            print(f"{Fore.LIGHTRED_EX}=== CONNECTION FAILED ==={Style.RESET_ALL}")
+            print(f"{Fore.LIGHTYELLOW_EX}Unable to establish connection to server.{Style.RESET_ALL}")
+            print(f"{Fore.LIGHTYELLOW_EX}Please verify server availability.{Style.RESET_ALL}")
             sys.exit(1)
 
     def register(self):
 
-        username = input(f"\n{Fore.CYAN}Enter new username: {Style.RESET_ALL}").strip()
-        password = input(f"\n{Fore.CYAN}Enter password: {Style.RESET_ALL}").strip()
+        username = input(f"\n{LBLUE}Enter new username: {Style.RESET_ALL}").strip()
+        password = input(f"\n{LBLUE}Enter password: {Style.RESET_ALL}").strip()
 
         if not username or not password:
-            print(f"{Fore.RED}[ERROR] Username and password cannot be empty{Style.RESET_ALL}")
-            return False
+            print(f"{Fore.LIGHTRED_EX}[ERROR] Username and password cannot be empty{Style.RESET_ALL}")
+            return None
 
         # REGISTER message body
         body = f"password: {password}"
@@ -84,10 +89,10 @@ class ClientHandler:
 
         try:
             self.tcp_socket.sendall(msg.encode("utf-8"))
-            print(f"{Fore.GREEN}✓ Registration request sent{Style.RESET_ALL}")
+            print(f"Registration request sent")
         except Exception as e:
-            print(f"{Fore.RED}[ERROR] Failed to send REGISTER: {e}{Style.RESET_ALL}")
-            return False
+            print(f"{Fore.LIGHTRED_EX}[ERROR] Failed to send REGISTER: {e}{Style.RESET_ALL}")
+            return None
 
         buffer = bytearray()
         registration_complete = False
@@ -96,8 +101,8 @@ class ClientHandler:
             try:
                 chunk = self.tcp_socket.recv(4096)
                 if not chunk:
-                    print(f"{Fore.RED}[ERROR] Server closed connection{Style.RESET_ALL}")
-                    return False
+                    print(f"{Fore.LIGHTRED_EX}[ERROR] Server closed connection{Style.RESET_ALL}")
+                    return None
 
                 buffer += chunk
 
@@ -119,45 +124,44 @@ class ClientHandler:
                     # Handle registration response
                     if not registration_complete:
                         if msg_type == "ACK":
-                            print(f"{Fore.GREEN}[SUCCESS] {message_body or 'Registration successful'}{Style.RESET_ALL}")
+                            print(f"{Fore.LIGHTGREEN_EX}[SUCCESS] {message_body or 'Registration successful'}{Style.RESET_ALL}")
                             registration_complete = True
 
                         elif msg_type == "ERROR":
-                            print(f"{Fore.RED}[ERROR] {message_body or 'Registration failed'}{Style.RESET_ALL}")
+                            print(f"{Fore.LIGHTRED_EX}[ERROR] {message_body or 'Registration failed'}{Style.RESET_ALL}")
+                            return None
 
                         elif msg_type == "P2P_DENIED":
-                            print(f"{Fore.YELLOW}>> [P2P DENIED] {message_body}{Style.RESET_ALL}")
+                            print(f"{Fore.LIGHTYELLOW_EX}[P2P DENIED] {message_body}{Style.RESET_ALL}")
 
                         elif msg_type == MESSAGE_FAILED:
-                            print(f"{Fore.YELLOW}>> [FAILED] {message_body}{Style.RESET_ALL}")
+                            print(f"{Fore.LIGHTYELLOW_EX}[FAILED] {message_body}{Style.RESET_ALL}")
 
                     # Handle any extra messages from server (like offline messages)
                     if registration_complete:
-                        print(f"{Fore.WHITE}[SERVER MESSAGE] {msg_type} from {sender}: {message_body}{Style.RESET_ALL}")
+                        print(f"[SERVER MESSAGE] {msg_type} from {sender}: {message_body}")
 
                 if registration_complete:
                     # Once registration is acknowledged, break out and return
                     return username
 
             except Exception as e:
-                print(f"{Fore.RED}[ERROR] Exception while waiting for server response: {e}{Style.RESET_ALL}")
-                return False
+                print(f"{Fore.LIGHTRED_EX}[ERROR] Exception while waiting for server response: {e}{Style.RESET_ALL}")
+                return None
 
     def login(self, username, password=""):
         self.username = username
         body = f"password: {password}"
         msg = build_tcp_message(LOGIN, username, "server", body)
         self.tcp_socket.sendall(msg.encode())
-        print(f"{Fore.GREEN}✓ Login request sent{Style.RESET_ALL}")
+        print(f"Login request sent")
 
-        # Wait for server ACK before P2P_REGISTER
-        ack_received = False
         buffer = b""
 
-        while not ack_received:
+        while True:
             data = self.tcp_socket.recv(BUFFER_SIZE)
             if not data:
-                print(f"{Fore.RED}[ERROR] Server disconnected during login{Style.RESET_ALL}")
+                print(f"{Fore.LIGHTRED_EX}[ERROR] Server disconnected during login{Style.RESET_ALL}")
                 return False
 
             buffer += data
@@ -169,7 +173,6 @@ class ClientHandler:
 
                 header_part = buffer[:sep_index]
                 remaining = buffer[sep_index + len(HEADER_BODY_SEPARATOR):]
-
                 parsed = parse_tcp_header(header_part.decode(errors="ignore"))
                 if not parsed:
                     buffer = remaining
@@ -186,18 +189,15 @@ class ClientHandler:
                 body_text = body_bytes.decode(errors="ignore")
 
                 if msg_type == ACK:
-                    ack_received = True
-                    print(f"{Fore.GREEN}Login successful, proceeding with P2P registration{Style.RESET_ALL}")
-                    
+                    print(f"{Fore.LIGHTGREEN_EX}Login successful{Style.RESET_ALL}")
+                    register_msg = build_tcp_message(P2P_REGISTER, self.username, "server", str(self.p2p_port))
+                    self.tcp_socket.sendall(register_msg.encode())
+                    print(f"{SALMON}P2P port {self.p2p_port} registered{Style.RESET_ALL}")
+                    return True
+
                 elif msg_type == ERROR:
-                    print(f"{Fore.RED}Login failed: {body_text}{Style.RESET_ALL}")
+                    print(f"{Fore.LIGHTRED_EX}Login failed: {body_text}{Style.RESET_ALL}")
                     return False
-
-            register_msg = build_tcp_message(P2P_REGISTER, self.username, "server", str(self.p2p_port))
-            self.tcp_socket.sendall(register_msg.encode())
-            print(f"{Fore.MAGENTA}✓ P2P port {self.p2p_port} registered{Style.RESET_ALL}")
-
-            return True
 
     def logout(self):
         try:
@@ -211,35 +211,25 @@ class ClientHandler:
         self.tcp_socket.close()
         self.udp_socket.close()
         self.p2p_server_socket.close()
-        print(f"""
-{Fore.CYAN}╔════════════════════════════════════════════════╗
-║     ██████╗░██╗░░░██╗███████╗██╗              ║
-║     ██╔══██╗╚██╗░██╔╝██╔════╝██║              ║
-║     ██████╦╝░╚████╔╝░█████╗░░██║              ║
-║     ██╔══██╗░░╚██╔╝░░██╔══╝░░╚═╝              ║
-║     ██████╦╝░░░██║░░░███████╗██╗              ║
-║     ╚═════╝░░░░╚═╝░░░╚══════╝╚═╝              ║
-╚════════════════════════════════════════════════╝{Style.RESET_ALL}
-        """)
+        print(f"{Fore.LIGHTYELLOW_EX}Logged out. Goodbye.{Style.RESET_ALL}")
         sys.exit(0)
 
     def send_file(self, receiver, filepath):
         if not os.path.exists(filepath):
-            print(f"{Fore.RED}[ERROR] File not found{Style.RESET_ALL}")
+            print(f"{Fore.LIGHTRED_EX}[ERROR] File not found{Style.RESET_ALL}")
             return
 
         filesize = os.path.getsize(filepath)
-        print(
-            f"{Fore.MAGENTA}📎 Preparing to send {os.path.basename(filepath)} ({filesize} bytes) to {receiver}{Style.RESET_ALL}")
+        print(f"{SALMON}Preparing to send {os.path.basename(filepath)} ({filesize} bytes) to {receiver}{Style.RESET_ALL}")
 
         # Asks the server for P2P connection
-        body = f"{os.path.basename(filepath)}\n{filesize}"
+        body = f"{os.path.basename(filepath)}\n{filepath}\n{filesize}"
 
         msg = build_tcp_message(P2P_REQUEST, self.username, receiver, body)
 
         self.tcp_socket.sendall(msg.encode())
 
-        print(f"{Fore.CYAN}[P2P REQUEST] Requesting direct transfer to {receiver}{Style.RESET_ALL}")
+        print(f"{SALMON}[P2P REQUEST] Requesting direct transfer to {receiver}{Style.RESET_ALL}")
 
     def send_text(self, receiver, text):
         msg = build_tcp_message(TEXT, self.username, receiver, text)
@@ -249,25 +239,52 @@ class ClientHandler:
         msg = build_tcp_message("GROUP_MSG", self.username, group_name, text)
         self.tcp_socket.sendall(msg.encode())
 
+    def send_group_file(self, group_name, filepath):
+        if not os.path.exists(filepath):
+            print(f"{Fore.LIGHTRED_EX}[ERROR] File not found{Style.RESET_ALL}")
+            return
+
+        msg_type = detect_file_type(filepath)
+        if not msg_type:
+            print(f"{Fore.LIGHTRED_EX}[ERROR] Unsupported file type{Style.RESET_ALL}")
+            return
+
+        filename = os.path.basename(filepath)
+        with open(filepath, "rb") as f:
+            file_data = f.read()
+
+        size = len(file_data)
+        header = (
+            f"TYPE: GROUP_FILE{HEADER_FIELD_SEPARATOR}"
+            f"FROM: {self.username}{HEADER_FIELD_SEPARATOR}"
+            f"TO: {group_name}{HEADER_FIELD_SEPARATOR}"
+            f"TIMESTAMP: {get_timestamp()}{HEADER_FIELD_SEPARATOR}"
+            f"FILENAME: {filename}{HEADER_FIELD_SEPARATOR}"
+            f"SIZE: {size}"
+            f"{HEADER_BODY_SEPARATOR}"
+        )
+        self.tcp_socket.sendall(header.encode() + file_data)
+        print(f"{SALMON}[GROUP FILE] Sending {filename} to group {group_name}{Style.RESET_ALL}")
+
     def create_group(self, group_name):
         msg = build_tcp_message(CREATE_GROUP, self.username, "server", group_name)
         self.tcp_socket.sendall(msg.encode())
-        print(f"{Fore.MAGENTA}Creating group: {group_name}{Style.RESET_ALL}")
+        print(f"{SALMON}Creating group: {group_name}{Style.RESET_ALL}")
 
     def join_group(self, group_name):
         msg = build_tcp_message(JOIN_GROUP, self.username, "server", group_name)
         self.tcp_socket.sendall(msg.encode())
-        print(f"{Fore.MAGENTA}Joining group: {group_name}{Style.RESET_ALL}")
+        print(f"{SALMON}Joining group: {group_name}{Style.RESET_ALL}")
 
     def add_user(self, group_name, user_to_add):
         if user_to_add == self.username:
-            print(f"{Fore.RED}[GROUP ERROR] You cannot add yourself to a group you created.{Style.RESET_ALL}")
+            print(f"{Fore.LIGHTRED_EX}[GROUP ERROR] You cannot add yourself to a group you created.{Style.RESET_ALL}")
             return
-    
+
         body = f"{group_name}:{user_to_add}"
         msg = build_tcp_message(ADD_USER, self.username, "server", body)
         self.tcp_socket.sendall(msg.encode())
-        print(f"{Fore.MAGENTA}Adding {user_to_add} to group {group_name}{Style.RESET_ALL}")
+        print(f"{SALMON}Adding {user_to_add} to group {group_name}{Style.RESET_ALL}")
 
     def remove_user(self, group_name, user_to_remove):
         body = f"{group_name}:{user_to_remove}"
@@ -277,12 +294,44 @@ class ClientHandler:
     def exit_group(self, group_name):
         msg = build_tcp_message(EXIT_GROUP, self.username, "server", group_name)
         self.tcp_socket.sendall(msg.encode())
-        print(f"{Fore.YELLOW}Leaving group: {group_name}{Style.RESET_ALL}")
+        print(f"{Fore.LIGHTYELLOW_EX}Leaving group: {group_name}{Style.RESET_ALL}")
 
     def block_user(self, target_user):
-        msg = build_tcp_message(BLOCK_USER, self.username, target_user)
+        msg = build_tcp_message(BLOCK_USER, self.username, target_user, "")
         self.tcp_socket.sendall(msg.encode())
-        print(f"{Fore.RED}Blocking user: {target_user}{Style.RESET_ALL}")
+        print(f"{Fore.LIGHTRED_EX}Blocking user: {target_user}{Style.RESET_ALL}")
+
+    def _do_p2p_send(self, peer_ip, peer_port, peer_username, filename, filepath):
+        try:
+            p2p_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            p2p_socket.connect((peer_ip, peer_port))
+
+            file_type = detect_file_type(filename)
+            size      = os.path.getsize(filepath)
+
+            header = (
+                f"TYPE: {file_type}{HEADER_FIELD_SEPARATOR}"
+                f"FROM: {self.username}{HEADER_FIELD_SEPARATOR}"
+                f"TO: {peer_username}{HEADER_FIELD_SEPARATOR}"
+                f"TIMESTAMP: {get_timestamp()}{HEADER_FIELD_SEPARATOR}"
+                f"FILENAME: {filename}{HEADER_FIELD_SEPARATOR}"
+                f"SIZE: {size}"
+                f"{HEADER_BODY_SEPARATOR}"
+            )
+            p2p_socket.sendall(header.encode())
+
+            with open(filepath, "rb") as f:
+                while True:
+                    chunk = f.read(BUFFER_SIZE)
+                    if not chunk:
+                        break
+                    p2p_socket.sendall(chunk)
+
+            p2p_socket.close()
+            print(f"{Fore.LIGHTGREEN_EX}[P2P SENT] {filename}{Style.RESET_ALL}")
+
+        except Exception as e:
+            print(f"{Fore.LIGHTRED_EX}[P2P ERROR] {e}{Style.RESET_ALL}")
 
     def receive_messages(self):
         buffer = b""
@@ -292,7 +341,7 @@ class ClientHandler:
                 data = self.tcp_socket.recv(BUFFER_SIZE)
 
                 if not data:
-                    print(f"{Fore.RED}[SERVER DISCONNECTED]{Style.RESET_ALL}")
+                    print(f"{Fore.LIGHTRED_EX}[SERVER DISCONNECTED]{Style.RESET_ALL}")
                     self.keep_running = False  # stop threads
                     break
 
@@ -338,63 +387,24 @@ class ClientHandler:
 
                     if msg_type in (IMAGE, VIDEO_FILE, AUDIO_FILE, DOCUMENT):
                         filename = parsed.get('FILENAME', 'unknown')
-                        print(f"{Fore.MAGENTA}[{time_str}] Receiving file: {filename}{Style.RESET_ALL}")
+                        sender = parsed.get('FROM', '?')
+                        print(f"{SALMON}{Fore.WHITE}[{time_str}]{SALMON} {CYAN}{sender}{SALMON} is sending you: {Fore.LIGHTYELLOW_EX}{filename}{Style.RESET_ALL}")
                         receive_file(parsed, body_bytes)
 
                     elif msg_type == "P2P_SIGNAL":
                         lines = body.split("\n")
-
                         try:
-                            peer_ip = lines[0].split(": ")[1]
-                            peer_port = int(lines[1].split(": ", 1)[1])
+                            peer_ip       = lines[0].split(": ", 1)[1]
+                            peer_port     = int(lines[1].split(": ", 1)[1])
                             peer_username = lines[2].split(": ", 1)[1]
-                            filename = lines[3].split(": ", 1)[1]
-                            filepath = lines[4].split(": ", 1)[1]
+                            filename      = lines[3].split(": ", 1)[1]
+                            filepath      = lines[4].split(": ", 1)[1]
                         except Exception:
-                            print(f"{Fore.RED}[P2P ERROR] Malformed P2P_SIGNAL message{Style.RESET_ALL}")
+                            print(f"{Fore.LIGHTRED_EX}[P2P ERROR] Malformed P2P_SIGNAL message{Style.RESET_ALL}")
                             continue
 
-                        print(
-                            f"{Fore.CYAN}[P2P] Direct connection ready with {Fore.GREEN}{peer_username}{Fore.CYAN} at {peer_ip}:{peer_port}{Style.RESET_ALL}")
-
-                        # Opens the P2P connection and sends the file
-                        try:
-
-                            p2p_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-                            p2p_socket.connect((peer_ip, peer_port))
-
-                            file_type = detect_file_type(filename)
-                            size = os.path.getsize(filepath)
-
-                            header = (
-                                f"TYPE: {file_type}{HEADER_FIELD_SEPARATOR}"
-                                f"FROM: {self.username}{HEADER_FIELD_SEPARATOR}"
-                                f"TO: {peer_username}{HEADER_FIELD_SEPARATOR}"
-                                f"TIMESTAMP: {get_timestamp()}{HEADER_FIELD_SEPARATOR}"
-                                f"FILENAME: {filename}{HEADER_FIELD_SEPARATOR}"
-                                f"SIZE: {size}"
-                                f"{HEADER_BODY_SEPARATOR}"
-                            )
-
-                            p2p_socket.sendall(header.encode())
-
-                            # Stream file in chunks
-                            with open(filepath, "rb") as f:
-                                while True:
-                                    chunk = f.read(BUFFER_SIZE)
-
-                                    if not chunk:
-                                        break
-
-                                    p2p_socket.sendall(chunk)
-
-                            p2p_socket.close()
-
-                            print(f"{Fore.GREEN}[P2P SENT] {filename}{Style.RESET_ALL}")
-
-                        except Exception as e:
-                            print(f"{Fore.RED}[P2P ERROR] {e}{Style.RESET_ALL}")
+                        print(f"{SALMON}[P2P] Direct connection ready with {CYAN}{peer_username}{SALMON} at {Fore.WHITE}{peer_ip}:{peer_port}{Style.RESET_ALL}")
+                        threading.Thread(target=self._do_p2p_send, args=(peer_ip, peer_port, peer_username, filename, filepath), daemon=True).start()
 
                     elif msg_type == "P2P_INCOMING":
                         lines = body.split("\n")
@@ -404,35 +414,28 @@ class ClientHandler:
                             peer_username = lines[1].split(": ", 1)[1]
                             filename = lines[2].split(": ", 1)[1]
                         except Exception:
-                            print(f"{Fore.RED}[P2P ERROR] Malformed P2P_INCOMING message{Style.RESET_ALL}")
+                            print(f"{Fore.LIGHTRED_EX}[P2P ERROR] Malformed P2P_INCOMING message{Style.RESET_ALL}")
                             continue
 
-                        print(
-                            f"{Fore.CYAN}[P2P] {Fore.GREEN}{peer_username}{Fore.CYAN} is sending you file: {Fore.YELLOW}{filename}{Style.RESET_ALL}")
+                        print(f"{SALMON}[P2P] {CYAN}{peer_username}{SALMON} is sending you file: {Fore.LIGHTYELLOW_EX}{filename}{Style.RESET_ALL}")
 
                     elif msg_type == "P2P_DENIED":
-                        print(f"{Fore.YELLOW}[FILE FAILED] {body}{Style.RESET_ALL}")
+                        print(f"{Fore.LIGHTYELLOW_EX}[FILE FAILED] {body}{Style.RESET_ALL}")
 
                     elif msg_type == ACK:
-                        print(f"{Fore.GREEN}>> [{time_str}] [ACK] {body}{Style.RESET_ALL}")
+                        print(f"\n{Fore.LIGHTGREEN_EX}{Fore.WHITE}[{time_str}]{Fore.LIGHTGREEN_EX} [ACK] {body}{Style.RESET_ALL}")
 
                     elif msg_type == ERROR:
-                        print(f"{Fore.RED}>> [{time_str}] [ERROR] {body}{Style.RESET_ALL}")
+                        print(f"\n{Fore.LIGHTRED_EX}{Fore.WHITE}[{time_str}]{Fore.LIGHTRED_EX} [ERROR] {body}{Style.RESET_ALL}")
 
                     elif msg_type == MESSAGE_FAILED:
-                        print(f"{Fore.YELLOW}>> [{time_str}] [FAILED] {body}{Style.RESET_ALL}")
+                        print(f"\n{Fore.LIGHTYELLOW_EX}{Fore.WHITE}[{time_str}]{Fore.LIGHTYELLOW_EX} [FAILED] {body}{Style.RESET_ALL}")
 
                     elif msg_type == USER_ONLINE:
-                        print(
-                            f"{Fore.GREEN}[{time_str}] [+] {Fore.CYAN}{parsed.get('FROM', '?')}{Fore.GREEN} is now online{Style.RESET_ALL}")
+                        print(f"\n{Fore.LIGHTGREEN_EX}{Fore.WHITE}[{time_str}]{Fore.LIGHTGREEN_EX} [+] {parsed.get('FROM', '?')} is now online{Style.RESET_ALL}")
 
                     elif msg_type == USER_OFFLINE:
-                        print(
-                            f"{Fore.RED}[{time_str}] [-] {Fore.CYAN}{parsed.get('FROM', '?')}{Fore.RED} has gone offline{Style.RESET_ALL}")
-                        
-                    elif msg_type == "GROUP_ADDED":
-                        print(
-                            f"{Fore.MAGENTA}[GROUP] {body}{Style.RESET_ALL}")
+                        print(f"\n{Fore.LIGHTRED_EX}{Fore.WHITE}[{time_str}]{Fore.LIGHTRED_EX} [-] {parsed.get('FROM', '?')} has gone offline{Style.RESET_ALL}")
 
                     else:
                         sender = parsed.get('FROM', '?')
@@ -440,9 +443,10 @@ class ClientHandler:
 
                         if is_self:
                             print()
-                            print(f"{Fore.GREEN}┌─ You [{time_str}]{Style.RESET_ALL}")
-                            print(f"{Fore.GREEN}│{Style.RESET_ALL} {body}")
-                            print(f"{Fore.GREEN}└{'─' * 40}{Style.RESET_ALL}")
+                            print(f"{Fore.WHITE}┌─ You [{Fore.WHITE}{time_str}{Fore.WHITE}]{Style.RESET_ALL}")
+                            print(f"{Fore.WHITE}│ {Style.RESET_ALL}{body}")
+                            print(f"{Fore.WHITE}└{'─' * 40}{Style.RESET_ALL}")
+                            print(f"{LBLUE}[{self.username}]{Style.RESET_ALL} > ", end="", flush=True)
                         else:
                             # Check if it's a group message
                             if body.startswith('[') and ']' in body:
@@ -451,21 +455,22 @@ class ClientHandler:
                                 group_name = body[1:group_end]
                                 actual_msg = body[group_end + 1:].strip()
                                 print()
-                                print(f"{Fore.MAGENTA}┌─ [{sender}] → [{group_name}] @ {time_str}{Style.RESET_ALL}")
-                                print(f"{Fore.MAGENTA}│{Style.RESET_ALL} {actual_msg}")
-                                print(f"{Fore.MAGENTA}└{'─' * 40}{Style.RESET_ALL}")
+                                print(f"{Fore.WHITE}┌─ [{sender}] → [{group_name}] @ {Fore.WHITE}{time_str}{Style.RESET_ALL}")
+                                print(f"{Fore.WHITE}│ {Style.RESET_ALL}{actual_msg}")
+                                print(f"{Fore.WHITE}└{'─' * 40}{Style.RESET_ALL}")
+                                print(f"{LBLUE}[{self.username}]{Style.RESET_ALL} > ", end="", flush=True)
                             else:
                                 print()
-                                print(f"{Fore.CYAN}┌─ {sender} @ {time_str}{Style.RESET_ALL}")
-                                print(f"{Fore.CYAN}│{Style.RESET_ALL} {body}")
-                                print(f"{Fore.CYAN}└{'─' * 40}{Style.RESET_ALL}")
+                                print(f"{Fore.WHITE}┌─ {sender} @ {Fore.WHITE}{time_str}{Style.RESET_ALL}")
+                                print(f"{Fore.WHITE}│ {Style.RESET_ALL}{body}")
+                                print(f"{Fore.WHITE}└{'─' * 40}{Style.RESET_ALL}")
+                                print(f"{LBLUE}[{self.username}]{Style.RESET_ALL} > ", end="", flush=True)
 
             except Exception as e:
                 if self.keep_running:
                     error_msg = str(e)
-
                     print()
-                    print(f"{Fore.RED}┌─[ERROR] NETWORK EXCEPTION")
+                    print(f"{Fore.LIGHTRED_EX}┌─[ERROR] NETWORK EXCEPTION")
                     print(f"│ {error_msg}")
                     print(f"└{'─' * len(error_msg)}{Style.RESET_ALL}\n")
 
@@ -475,7 +480,7 @@ class ClientHandler:
         while self.keep_running:
             try:
                 conn, addr = self.p2p_server_socket.accept()
-                print(f"{Fore.CYAN}[P2P] Incoming connection from {addr}{Style.RESET_ALL}")
+                print(f"{SALMON}[P2P] Incoming connection from {Fore.WHITE}{addr}{Style.RESET_ALL}")
 
                 threading.Thread(
                     target=self.handle_p2p_transfer,
@@ -485,7 +490,7 @@ class ClientHandler:
 
             except Exception as e:
                 if self.keep_running:
-                    print(f"{Fore.RED}[P2P ERROR] {e}{Style.RESET_ALL}")
+                    print(f"{Fore.LIGHTRED_EX}[P2P ERROR] {e}{Style.RESET_ALL}")
                 break
 
     def handle_p2p_transfer(self, conn, addr):
@@ -509,7 +514,7 @@ class ClientHandler:
             filename = parsed.get("FILENAME", "unknown_file")
             size = int(parsed.get(FIELD_SIZE, 0))
 
-            print(f"{Fore.MAGENTA}[P2P] Receiving file: {filename} ({size} bytes){Style.RESET_ALL}")
+            print(f"{SALMON}[P2P] Receiving file: {Fore.LIGHTYELLOW_EX}{filename}{Fore.WHITE} ({size} bytes){Style.RESET_ALL}")
 
             os.makedirs(MEDIA_DIR, exist_ok=True)
             save_path = os.path.join(MEDIA_DIR, filename)
@@ -533,12 +538,12 @@ class ClientHandler:
                     f.write(chunk)
                     received += len(chunk)
 
-            print(f"{Fore.GREEN}[P2P RECEIVED] {filename}{Style.RESET_ALL}")
+            print(f"{Fore.LIGHTGREEN_EX}[P2P RECEIVED] {filename}{Style.RESET_ALL}")
 
             conn.close()
 
         except Exception as e:
-            print(f"{Fore.RED}[P2P TRANSFER ERROR] {e}{Style.RESET_ALL}")
+            print(f"{Fore.LIGHTRED_EX}[P2P TRANSFER ERROR] {e}{Style.RESET_ALL}")
             conn.close()
 
     def receive_udp(self):
@@ -553,18 +558,18 @@ class ClientHandler:
                 sender = parsed.get("FROM")
 
                 if msg_type == TYPING:
-                    print(f"{Fore.WHITE}{Back.BLUE} {sender} is typing... {Style.RESET_ALL}")
-                    
+                    print(f"{LBLUE} {sender} is typing... {Style.RESET_ALL}")
+
                 elif msg_type == KEEP_ALIVE:
                     # Ignore keep-alive messages
                     pass
 
                 else:
-                    print(f"{Fore.YELLOW}[UDP] {msg_type} from {sender}{Style.RESET_ALL}")
+                    print(f"{Fore.LIGHTYELLOW_EX}[UDP] {msg_type} from {sender}{Style.RESET_ALL}")
 
             except Exception as e:
                 if self.keep_running:
-                    print(f"{Fore.RED}[UDP ERROR] {e}{Style.RESET_ALL}")
+                    print(f"{Fore.LIGHTRED_EX}[UDP ERROR] {e}{Style.RESET_ALL}")
                 break
 
     def send_typing(self, receiver):
@@ -611,94 +616,79 @@ if __name__ == "__main__":
     # Clear screen for better visibility
     os.system('cls' if os.name == 'nt' else 'clear')
 
-    # Print banner
-    print(f"{Fore.CYAN}{'═' * 60}{Style.RESET_ALL}")
-    print(f"{Fore.CYAN}║{Fore.WHITE}{' ' * 58}{Fore.CYAN}║")
-    print(f"{Fore.CYAN}║{Fore.YELLOW}{'CSC3002F CHAT CLIENT'.center(58)}{Fore.CYAN}║")
-    print(f"{Fore.CYAN}║{Fore.GREEN}{'Multi-Paradigm Chat Application'.center(58)}{Fore.CYAN}║")
-    print(f"{Fore.CYAN}║{Fore.WHITE}{' ' * 58}{Fore.CYAN}║")
-    print(f"{Fore.CYAN}{'═' * 60}{Style.RESET_ALL}\n")
-
     client = ClientHandler()
     client.connect()
 
     while True:
 
-        print(f"\n{Fore.CYAN}1. Register{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}2. Login{Style.RESET_ALL}")
-        print(f"{Fore.RED}3. Exit{Style.RESET_ALL}")
+        print(f"\n{Fore.LIGHTGREEN_EX}1. Register{Style.RESET_ALL}")
+        print(f"{LBLUE}2. Login{Style.RESET_ALL}")
+        print(f"{Fore.LIGHTRED_EX}3. Exit{Style.RESET_ALL}")
 
-        choice = input(f"\n{Fore.YELLOW}Select option (1, 2, or 3): {Style.RESET_ALL}")
+        choice = input(f"\nSelect option (1, 2, or 3): ")
 
         # Validate menu input
         if choice not in ["1", "2", "3"]:
-            print(f"{Fore.RED}Invalid option. Please select 1(Register), 2(Login), or 3(Exit).{Style.RESET_ALL}")
+            print(f"{Fore.LIGHTRED_EX}Invalid option. Please select 1(Register), 2(Login), or 3(Exit).{Style.RESET_ALL}")
             continue
 
         if choice == "3":
-            print(f"{Fore.YELLOW}Exiting client...{Style.RESET_ALL}")
+            print(f"{Fore.LIGHTYELLOW_EX}Exiting client...{Style.RESET_ALL}")
             sys.exit(0)
 
         if choice == "1":
             registered_username = client.register()
 
             if not registered_username:
-                print(f"{Fore.RED}Registration failed. Please try again.{Style.RESET_ALL}")
+                print(f"{Fore.LIGHTRED_EX}Registration failed. Please try again.{Style.RESET_ALL}")
                 continue
 
-            print(f"{Fore.GREEN}You can now log in with your new credentials.{Style.RESET_ALL}")
+            print(f"You can now log in with your new credentials.")
             username = registered_username
-            password = input(f"\n{Fore.CYAN}Enter password: {Style.RESET_ALL}").strip()
+            password = input(f"\n{LBLUE}Enter password: {Style.RESET_ALL}").strip()
 
             login_success = client.login(username, password)
             if not login_success:
-                print(f"{Fore.RED}Login failed. Returning to main menu.{Style.RESET_ALL}")
+                print(f"{Fore.LIGHTRED_EX}Login failed. Returning to main menu.{Style.RESET_ALL}")
                 continue
 
             break
 
         elif choice == "2":
 
-            username = input(f"{Fore.CYAN}Enter username: {Style.RESET_ALL}").strip()
-            password = input(f"{Fore.CYAN}Enter password: {Style.RESET_ALL}").strip()
+            username = input(f"{LBLUE}Enter username: {Style.RESET_ALL}").strip()
+            password = input(f"{LBLUE}Enter password: {Style.RESET_ALL}").strip()
 
             login_success = client.login(username, password)
 
             if not login_success:
-                print(f"{Fore.RED}Login failed. Please try again.{Style.RESET_ALL}")
+                print(f"{Fore.LIGHTRED_EX}Login failed. Please try again.{Style.RESET_ALL}")
                 continue
 
             break
 
-    #Only runs after succesful login
+    # Only runs after successful login
     client.start_threads()
 
-    print(f"""
-{Fore.CYAN}╔════════════════════════════════════════════════════════════════╗
-║  ██╗░░░░░░░██╗███████╗██╗░░░░░░█████╗░░█████╗░███╗░░░███╗███████╗  ║
-║  ██║░░██╗░░██║██╔════╝██║░░░░░██╔══██╗██╔══██╗████╗░████║██╔════╝  ║
-║  ╚██╗████╗██╔╝█████╗░░██║░░░░░██║░░╚═╝██║░░██║██╔████╔██║█████╗░░  ║
-║  ░████╔═████║░██╔══╝░░██║░░░░░██║░░██╗██║░░██║██║╚██╔╝██║██╔══╝░░  ║
-║  ░╚██╔╝░╚██╔╝░███████╗███████╗╚█████╔╝╚█████╔╝██║░╚═╝░██║███████╗  ║
-║  ░░╚═╝░░░╚═╝░░╚══════╝╚══════╝░╚════╝░░╚════╝░╚═╝░░░░░╚═╝╚══════╝  ║
-╚════════════════════════════════════════════════════════════════════╝{Style.RESET_ALL}
-    """)
-    print(f"  {Fore.GREEN}logged in as: {Fore.YELLOW}{username}{Style.RESET_ALL}")
-    print()
-    print(f"  {Fore.CYAN}/msg  <user> <text>      send a message{Style.RESET_ALL}")
-    print(f"  {Fore.MAGENTA}/file <user> <path>      send a file{Style.RESET_ALL}")
-    print(f"  {Fore.MAGENTA}/gmsg <group> <text>     group message{Style.RESET_ALL}")
-    print(f"  {Fore.MAGENTA}/create <group>          create a group{Style.RESET_ALL}")
-    print(f"  {Fore.MAGENTA}/join  <group>           join a group{Style.RESET_ALL}")
-    print(f"  {Fore.MAGENTA}/add   <group> <user>    add to group{Style.RESET_ALL}")
-    print(f"  {Fore.MAGENTA}/leave <group>           leave a group{Style.RESET_ALL}")
-    print(f"  {Fore.RED}/block <user>            block a user{Style.RESET_ALL}")
-    print(f"  {Fore.YELLOW}/exit                    quit{Style.RESET_ALL}")
-    print()
+    print(f"\n  {Fore.LIGHTYELLOW_EX}logged in as: {username}{Style.RESET_ALL}")
+    print(f"\n  {'─' * 44}")
+    print(f"  /msg  <user> <text>      send a message")
+    print(f"  /file <user> <path>      send a file")
+    print(f"  /gmsg <group> <text>     group message")
+    print(f"  /gfile <group> <path>    send file to group")
+    print(f"  /create <group>          create a group")
+    print(f"  /join  <group>           join a group")
+    print(f"  /add   <group> <user>    add to group")
+    print(f"  /remove <group> <user>   remove from group")
+    print(f"  /leave <group>           leave a group")
+    print(f"  /block <user>            block a user")
+    print(f"  /exit                    quit")
+    print(f"  {'─' * 44}\n")
 
     while True:
         try:
-            command = input(f"\n{Fore.GREEN}>>{Style.RESET_ALL} ")
+            time.sleep(0.15)  # Brief delay to allow ACK messages to arrive before showing prompt
+            command = input(f"{LBLUE}[{username}]{Style.RESET_ALL} > ")
 
             if not command.strip():
                 continue
@@ -708,67 +698,80 @@ if __name__ == "__main__":
                 if len(parts) == 3:
                     client.send_text(parts[1], parts[2])
                 else:
-                    print(f"{Fore.RED}Usage: /msg <username> <text>{Style.RESET_ALL}")
+                    print(f"{Fore.LIGHTRED_EX}Usage: /msg <username> <text>{Style.RESET_ALL}")
 
             elif command.startswith("/file"):
                 parts = command.split(" ", 2)
                 if len(parts) == 3:
                     client.send_file(parts[1], parts[2])
                 else:
-                    print(f"{Fore.RED}Usage: /file <username> <path>{Style.RESET_ALL}")
+                    print(f"{Fore.LIGHTRED_EX}Usage: /file <username> <path>{Style.RESET_ALL}")
 
             elif command.startswith("/block"):
                 parts = command.split()
                 if len(parts) == 2:
                     client.block_user(parts[1])
                 else:
-                    print(f"{Fore.RED}Usage: /block <username>{Style.RESET_ALL}")
+                    print(f"{Fore.LIGHTRED_EX}Usage: /block <username>{Style.RESET_ALL}")
 
             elif command.startswith("/create"):
                 parts = command.split()
                 if len(parts) == 2:
                     client.create_group(parts[1])
                 else:
-                    print(f"{Fore.RED}Usage: /create <group_name>{Style.RESET_ALL}")
+                    print(f"{Fore.LIGHTRED_EX}Usage: /create <group_name>{Style.RESET_ALL}")
 
             elif command.startswith("/add"):
                 parts = command.split()
                 if len(parts) == 3:
                     client.add_user(parts[1], parts[2])
                 else:
-                    print(f"{Fore.RED}Usage: /add <group_name> <username>{Style.RESET_ALL}")
+                    print(f"{Fore.LIGHTRED_EX}Usage: /add <group_name> <username>{Style.RESET_ALL}")
+
+            elif command.startswith("/remove"):
+                parts = command.split()
+                if len(parts) == 3:
+                    client.remove_user(parts[1], parts[2])
+                else:
+                    print(f"{Fore.LIGHTRED_EX}Usage: /remove <group_name> <username>{Style.RESET_ALL}")
 
             elif command.startswith("/gmsg"):
                 parts = command.split(" ", 2)
                 if len(parts) == 3:
                     client.send_group_message(parts[1], parts[2])
                 else:
-                    print(f"{Fore.RED}Usage: /gmsg <group_name> <text>{Style.RESET_ALL}")
+                    print(f"{Fore.LIGHTRED_EX}Usage: /gmsg <group_name> <text>{Style.RESET_ALL}")
+
+            elif command.startswith("/gfile"):
+                parts = command.split(" ", 2)
+                if len(parts) == 3:
+                    client.send_group_file(parts[1], parts[2])
+                else:
+                    print(f"{Fore.LIGHTRED_EX}Usage: /gfile <group_name> <path>{Style.RESET_ALL}")
 
             elif command.startswith("/join"):
                 parts = command.split()
                 if len(parts) == 2:
                     client.join_group(parts[1])
                 else:
-                    print(f"{Fore.RED}Usage: /join <group_name>{Style.RESET_ALL}")
+                    print(f"{Fore.LIGHTRED_EX}Usage: /join <group_name>{Style.RESET_ALL}")
 
             elif command.startswith("/leave"):
                 parts = command.split()
                 if len(parts) == 2:
                     client.exit_group(parts[1])
                 else:
-                    print(f"{Fore.RED}Usage: /leave <group_name>{Style.RESET_ALL}")
+                    print(f"{Fore.LIGHTRED_EX}Usage: /leave <group_name>{Style.RESET_ALL}")
 
             elif command.startswith("/exit"):
                 client.logout()
 
             else:
-                print(
-                    f"{Fore.RED}Unknown command. Type /msg, /gmsg, /file, /block, /create, /add, /join, /leave, or /exit{Style.RESET_ALL}")
+                print(f"{Fore.LIGHTRED_EX}Unknown command. Type /msg, /gmsg, /file, /block, /create, /add, /remove, /join, /leave, or /exit{Style.RESET_ALL}")
 
         except KeyboardInterrupt:
-            print(f"\n{Fore.YELLOW}Logging out...{Style.RESET_ALL}")
+            print(f"\n{Fore.LIGHTYELLOW_EX}Logging out...{Style.RESET_ALL}")
             client.logout()
             break
         except Exception as e:
-            print(f"{Fore.RED}Error: {e}{Style.RESET_ALL}")
+            print(f"{Fore.LIGHTRED_EX}Error: {e}{Style.RESET_ALL}")
