@@ -388,7 +388,7 @@ class ClientHandler:
                     if msg_type in (IMAGE, VIDEO_FILE, AUDIO_FILE, DOCUMENT):
                         filename = parsed.get('FILENAME', 'unknown')
                         sender = parsed.get('FROM', '?')
-                        print(f"{SALMON}[{Fore.WHITE}{time_str}{SALMON}] {CYAN}{sender}{SALMON} is sending you: {Fore.LIGHTYELLOW_EX}{filename}{Style.RESET_ALL}")
+                        print(f"{SALMON}{Fore.WHITE}[{time_str}]{SALMON} {CYAN}{sender}{SALMON} is sending you: {Fore.LIGHTYELLOW_EX}{filename}{Style.RESET_ALL}")
                         receive_file(parsed, body_bytes)
 
                     elif msg_type == "P2P_SIGNAL":
@@ -423,21 +423,19 @@ class ClientHandler:
                         print(f"{Fore.LIGHTYELLOW_EX}[FILE FAILED] {body}{Style.RESET_ALL}")
 
                     elif msg_type == ACK:
-                        print(f"\n{Fore.LIGHTGREEN_EX}[{Fore.WHITE}{time_str}{Fore.LIGHTGREEN_EX}] [ACK] {body}{Style.RESET_ALL}")
+                        print(f"\n{Fore.LIGHTGREEN_EX}{Fore.WHITE}[{time_str}]{Fore.LIGHTGREEN_EX} [ACK] {body}{Style.RESET_ALL}")
 
                     elif msg_type == ERROR:
-                        print(f"\n{Fore.LIGHTRED_EX}[{Fore.WHITE}{time_str}{Fore.LIGHTRED_EX}] [ERROR] {body}{Style.RESET_ALL}")
+                        print(f"\n{Fore.LIGHTRED_EX}{Fore.WHITE}[{time_str}]{Fore.LIGHTRED_EX} [ERROR] {body}{Style.RESET_ALL}")
 
                     elif msg_type == MESSAGE_FAILED:
-                        print(f"\n{Fore.LIGHTYELLOW_EX}[{Fore.WHITE}{time_str}{Fore.LIGHTYELLOW_EX}] [FAILED] {body}{Style.RESET_ALL}")
+                        print(f"\n{Fore.LIGHTYELLOW_EX}{Fore.WHITE}[{time_str}]{Fore.LIGHTYELLOW_EX} [FAILED] {body}{Style.RESET_ALL}")
 
                     elif msg_type == USER_ONLINE:
-                        print(f"\n{Fore.LIGHTGREEN_EX}[{Fore.WHITE}{time_str}{Fore.LIGHTGREEN_EX}] [+] {parsed.get('FROM', '?')} is now online{Style.RESET_ALL}")
-                        print(f"{LBLUE}[{self.username}]{Style.RESET_ALL} > ", end="", flush=True)
+                        print(f"\n{Fore.LIGHTGREEN_EX}{Fore.WHITE}[{time_str}]{Fore.LIGHTGREEN_EX} [+] {parsed.get('FROM', '?')} is now online{Style.RESET_ALL}")
 
                     elif msg_type == USER_OFFLINE:
-                        print(f"\n{Fore.LIGHTRED_EX}[{Fore.WHITE}{time_str}{Fore.LIGHTRED_EX}] [-] {parsed.get('FROM', '?')} has gone offline{Style.RESET_ALL}")
-                        print(f"{LBLUE}[{self.username}]{Style.RESET_ALL} > ", end="", flush=True)
+                        print(f"\n{Fore.LIGHTRED_EX}{Fore.WHITE}[{time_str}]{Fore.LIGHTRED_EX} [-] {parsed.get('FROM', '?')} has gone offline{Style.RESET_ALL}")
 
                     else:
                         sender = parsed.get('FROM', '?')
@@ -516,7 +514,7 @@ class ClientHandler:
             filename = parsed.get("FILENAME", "unknown_file")
             size = int(parsed.get(FIELD_SIZE, 0))
 
-            print(f"{SALMON}[P2P] Receiving file: {Fore.LIGHTYELLOW_EX}{filename}{SALMON} ({Fore.WHITE}{size}{SALMON} bytes){Style.RESET_ALL}")
+            print(f"{SALMON}[P2P] Receiving file: {Fore.LIGHTYELLOW_EX}{filename}{Fore.WHITE} ({size} bytes){Style.RESET_ALL}")
 
             os.makedirs(MEDIA_DIR, exist_ok=True)
             save_path = os.path.join(MEDIA_DIR, filename)
