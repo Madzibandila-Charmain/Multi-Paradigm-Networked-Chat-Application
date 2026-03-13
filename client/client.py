@@ -423,20 +423,20 @@ class ClientHandler:
                         print(f"{Fore.LIGHTYELLOW_EX}[FILE FAILED] {body}{Style.RESET_ALL}")
 
                     elif msg_type == ACK:
-                         print(f"\n{Fore.LIGHTGREEN_EX}[{time_str}] [ACK] {body}{Style.RESET_ALL}")
+                        print(f"\n{Fore.LIGHTGREEN_EX}[{Fore.WHITE}{time_str}{Fore.LIGHTGREEN_EX}] [ACK] {body}{Style.RESET_ALL}")
 
                     elif msg_type == ERROR:
-                        print(f"\n{Fore.LIGHTRED_EX}[{time_str}] [ERROR] {body}{Style.RESET_ALL}")
+                        print(f"\n{Fore.LIGHTRED_EX}[{Fore.WHITE}{time_str}{Fore.LIGHTRED_EX}] [ERROR] {body}{Style.RESET_ALL}")
 
                     elif msg_type == MESSAGE_FAILED:
-                        print(f"\n{Fore.LIGHTYELLOW_EX}[{time_str}] [FAILED] {body}{Style.RESET_ALL}")
+                        print(f"\n{Fore.LIGHTYELLOW_EX}[{Fore.WHITE}{time_str}{Fore.LIGHTYELLOW_EX}] [FAILED] {body}{Style.RESET_ALL}")
 
                     elif msg_type == USER_ONLINE:
-                        print(f"\n{Fore.LIGHTGREEN_EX}[{time_str}] [+] {parsed.get('FROM', '?')} is now online{Style.RESET_ALL}")
+                        print(f"\n{Fore.LIGHTGREEN_EX}[{Fore.WHITE}{time_str}{Fore.LIGHTGREEN_EX}] [+] {parsed.get('FROM', '?')} is now online{Style.RESET_ALL}")
                         print(f"{LBLUE}[{self.username}]{Style.RESET_ALL} > ", end="", flush=True)
 
                     elif msg_type == USER_OFFLINE:
-                        print(f"\n{Fore.LIGHTRED_EX}[{time_str}] [-] {parsed.get('FROM', '?')} has gone offline{Style.RESET_ALL}")
+                        print(f"\n{Fore.LIGHTRED_EX}[{Fore.WHITE}{time_str}{Fore.LIGHTRED_EX}] [-] {parsed.get('FROM', '?')} has gone offline{Style.RESET_ALL}")
                         print(f"{LBLUE}[{self.username}]{Style.RESET_ALL} > ", end="", flush=True)
 
                     else:
@@ -445,7 +445,7 @@ class ClientHandler:
 
                         if is_self:
                             print()
-                            print(f"{Fore.WHITE}┌─ You [{time_str}]{Style.RESET_ALL}")
+                            print(f"{Fore.WHITE}┌─ You [{Fore.WHITE}{time_str}{Fore.WHITE}]{Style.RESET_ALL}")
                             print(f"{Fore.WHITE}│ {Style.RESET_ALL}{body}")
                             print(f"{Fore.WHITE}└{'─' * 40}{Style.RESET_ALL}")
                             print(f"{LBLUE}[{self.username}]{Style.RESET_ALL} > ", end="", flush=True)
@@ -457,15 +457,15 @@ class ClientHandler:
                                 group_name = body[1:group_end]
                                 actual_msg = body[group_end + 1:].strip()
                                 print()
-                                print(f"{Fore.WHITE}┌─ [{sender}] → [{group_name}] @ {time_str}{Style.RESET_ALL}")
+                                print(f"{Fore.WHITE}┌─ [{sender}] → [{group_name}] @ {Fore.WHITE}{time_str}{Style.RESET_ALL}")
                                 print(f"{Fore.WHITE}│ {Style.RESET_ALL}{actual_msg}")
                                 print(f"{Fore.WHITE}└{'─' * 40}{Style.RESET_ALL}")
                                 print(f"{LBLUE}[{self.username}]{Style.RESET_ALL} > ", end="", flush=True)
                             else:
                                 print()
-                                print(f"┌─ {sender} @ {time_str}")
-                                print(f"│ {body}")
-                                print(f"└{'─' * 40}")
+                                print(f"{Fore.WHITE}┌─ {sender} @ {Fore.WHITE}{time_str}{Style.RESET_ALL}")
+                                print(f"{Fore.WHITE}│ {Style.RESET_ALL}{body}")
+                                print(f"{Fore.WHITE}└{'─' * 40}{Style.RESET_ALL}")
                                 print(f"{LBLUE}[{self.username}]{Style.RESET_ALL} > ", end="", flush=True)
 
             except Exception as e:
