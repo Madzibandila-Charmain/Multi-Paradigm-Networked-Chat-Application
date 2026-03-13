@@ -17,6 +17,7 @@ init()  # Initialize colorama (automatically resets on Windows)
 # Custom ANSI colors not available in colorama's built-in palette
 SALMON = "\033[38;5;209m"   # salmon pink  — file, group, P2P operations
 LBLUE  = "\033[38;5;117m"   # light blue   — prompts, info, incoming messages, help menu
+CYAN   = "\033[38;5;51m" 
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -386,7 +387,8 @@ class ClientHandler:
 
                     if msg_type in (IMAGE, VIDEO_FILE, AUDIO_FILE, DOCUMENT):
                         filename = parsed.get('FILENAME', 'unknown')
-                        print(f"{SALMON}[{time_str}] Receiving file: {filename}{Style.RESET_ALL}")
+                        sender = parsed.get('FROM', '?')
+                        print(f"{SALMON}[{Fore.WHITE}{time_str}{SALMON}] {CYAN}{sender}{SALMON} is sending you: {Fore.LIGHTYELLOW_EX}{filename}{Style.RESET_ALL}")
                         receive_file(parsed, body_bytes)
 
                     elif msg_type == "P2P_SIGNAL":
@@ -401,8 +403,7 @@ class ClientHandler:
                             print(f"{Fore.LIGHTRED_EX}[P2P ERROR] Malformed P2P_SIGNAL message{Style.RESET_ALL}")
                             continue
 
-                        print(f"{SALMON}[P2P] Direct connection ready with {Fore.LIGHTGREEN_EX}{peer_username}{SALMON} at {peer_ip}:{peer_port}{Style.RESET_ALL}")
-
+                        print(f"{SALMON}[P2P] Direct connection ready with {CYAN}{peer_username}{SALMON} at {Fore.WHITE}{peer_ip}:{peer_port}{Style.RESET_ALL}")
                         threading.Thread(target=self._do_p2p_send, args=(peer_ip, peer_port, peer_username, filename, filepath), daemon=True).start()
 
                     elif msg_type == "P2P_INCOMING":
@@ -416,7 +417,7 @@ class ClientHandler:
                             print(f"{Fore.LIGHTRED_EX}[P2P ERROR] Malformed P2P_INCOMING message{Style.RESET_ALL}")
                             continue
 
-                        print(f"{SALMON}[P2P] {Fore.LIGHTGREEN_EX}{peer_username}{SALMON} is sending you file: {Fore.LIGHTYELLOW_EX}{filename}{Style.RESET_ALL}")
+                        print(f"{SALMON}[P2P] {CYAN}{peer_username}{SALMON} is sending you file: {Fore.LIGHTYELLOW_EX}{filename}{Style.RESET_ALL}")
 
                     elif msg_type == "P2P_DENIED":
                         print(f"{Fore.LIGHTYELLOW_EX}[FILE FAILED] {body}{Style.RESET_ALL}")
@@ -481,7 +482,7 @@ class ClientHandler:
         while self.keep_running:
             try:
                 conn, addr = self.p2p_server_socket.accept()
-                print(f"{SALMON}[P2P] Incoming connection from {addr}{Style.RESET_ALL}")
+                print(f"{SALMON}[P2P] Incoming connection from {Fore.WHITE}{addr}{Style.RESET_ALL}")
 
                 threading.Thread(
                     target=self.handle_p2p_transfer,
@@ -515,7 +516,7 @@ class ClientHandler:
             filename = parsed.get("FILENAME", "unknown_file")
             size = int(parsed.get(FIELD_SIZE, 0))
 
-            print(f"{SALMON}[P2P] Receiving file: {filename} ({size} bytes){Style.RESET_ALL}")
+            print(f"{SALMON}[P2P] Receiving file: {Fore.LIGHTYELLOW_EX}{filename}{SALMON} ({Fore.WHITE}{size}{SALMON} bytes){Style.RESET_ALL}")
 
             os.makedirs(MEDIA_DIR, exist_ok=True)
             save_path = os.path.join(MEDIA_DIR, filename)
